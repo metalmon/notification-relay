@@ -1,15 +1,26 @@
 # Configuration Guide
 
-This document describes the configuration files used by the Push Notification Relay Server.
-
-## File Overview
-
+## File Structure
 The server uses several JSON configuration files:
 
-1. [`config.json`](#configjson) - Main configuration file
-2. [`decoration.json`](decoration.md) - Notification decoration rules
-3. [`icons.json`](icons.md) - Project icon paths
+1. `config.json` - Main configuration file
+2. `decoration.json` - Notification decoration rules
+3. `icons.json` - Project icon paths
 4. `user-device-map.json` - User device token mapping
+5. `credentials.json` - API credentials for authenticated sites
+
+## credentials.json
+
+This file stores the API credentials for authenticated sites:
+
+```json
+{
+    "api_key_1": "api_secret_1",
+    "api_key_2": "api_secret_2"
+}
+```
+
+This file is automatically managed by the server - you don't need to edit it manually.
 
 ## config.json
 
@@ -68,6 +79,7 @@ All configuration files should be placed in the project root directory:
 ```
 /project_root
 ├── config.json
+├── credentials.json
 ├── decoration.json
 ├── icons.json
 ├── user-device-map.json
@@ -75,4 +87,9 @@ All configuration files should be placed in the project root directory:
     ├── raven.png
     ├── hrms.png
     └── crm.png
-``` 
+```
+
+## .gitignore
+
+# Configuration files containing sensitive data
+config

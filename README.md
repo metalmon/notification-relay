@@ -79,7 +79,13 @@ For detailed configuration examples and structure, see the [configuration docume
 
 ## API Endpoints
 
-All endpoints require Basic Authentication using the configured API key and secret.
+All endpoints (except authentication) require Basic Authentication using the configured API key and secret.
+
+### Authentication
+- `POST /api/method/notification_relay.api.auth.get_credential`
+  - Get API credentials for a Frappe site
+  - Body: JSON with endpoint, protocol, port, token, and webhook_route
+  - No authentication required for this endpoint
 
 - `GET /api/method/notification_relay.api.get_config`
   - Returns VAPID public key and Firebase configuration

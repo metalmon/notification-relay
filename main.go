@@ -85,6 +85,7 @@ func main() {
 	auth.POST("/api/method/notification_relay.api.token.remove", removeToken)
 	auth.POST("/api/method/notification_relay.api.send_notification.user", sendNotificationToUser)
 	auth.POST("/api/method/notification_relay.api.send_notification.topic", sendNotificationToTopic)
+	auth.POST("/api/method/notification_relay.api.auth.get_credential", getCredential)
 
 	r.Run(":5000")
 } 

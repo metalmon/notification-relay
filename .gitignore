@@ -6,3 +6,14 @@ erpsgs-frappe-firebase-adminsdk-cred.json
 firebase-config.json
 my_secrets.py
 user-device-map.json
+
+# Configuration files containing sensitive data
+config.json
+credentials.json
+service-account.json
+
+# Logs
+*.log
+
+# Binary files
+notification-relay
