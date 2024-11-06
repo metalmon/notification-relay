@@ -1,49 +1,76 @@
 # Push Notification Relay Server for Frappe Apps
 This repo provides a push notification relay server for Frappe Apps such as Raven, implemented in Go.
 
-## Getting Started
-To run this application, follow these steps:
+## Installation
 
-1. Clone this project
-2. Install Go (version 1.21 or higher) if not already installed
-3. Install dependencies:
+### Option 1: Easy Installation Script
+Run the following command to automatically download and install everything:
+```bash
+curl -sSL https://raw.githubusercontent.com/metalmon/relay-server/main/install.sh | sudo bash
+```
+
+After installation:
+1. Edit `/etc/notification-relay/config.json` with your configuration
+2. Place your Firebase service account JSON file at `/etc/notification-relay/service-account.json`
+3. Start the service:
+```bash
+sudo systemctl start notification-relay
+```
+
+### Option 2: Quick Installation (Pre-compiled Binary)
+1. Download the latest release:
+```bash
+wget https://github.com/metalmon/relay-server/releases/latest/download/notification-relay-linux-amd64.tar.gz
+```
+
+2. Extract the binary:
+```bash
+tar xzf notification-relay-linux-amd64.tar.gz
+sudo mv notification-relay-linux-amd64 /usr/local/bin/notification-relay
+sudo chmod +x /usr/local/bin/notification-relay
+```
+
+### Option 3: Build from Source
+If you prefer to compile the binary yourself:
+
+1. Install Go (version 1.21 or higher)
+2. Clone this repository:
+```bash
+git clone https://github.com/metalmon/relay-server.git
+cd relay-server
+```
+
+3. Install dependencies and build:
 ```bash
 go mod download
+go build -o notification-relay
 ```
 
-4. Create a Firebase Project & get Service Account credentials [Link](https://sharma-vikashkr.medium.com/firebase-how-to-setup-a-firebase-service-account-836a70bb6646)
-
-5. Follow **Register your app** under Step 1 in the [Firebase documentation](https://firebase.google.com/docs/web/setup#register-app) and obtain the `FIREBASE_CONFIG` JSON object.
-
-6. Follow this StackOverflow [Link](https://stackoverflow.com/a/54996207) to generate a VAPID key.
-
-7. Create a `config.json` file in the project root with the following structure:
-```json
-{
-    "vapid_public_key": "your_vapid_public_key",
-    "firebase_config": {
-        "apiKey": "your-api-key",
-        "authDomain": "your-project.firebaseapp.com",
-        "projectId": "your-project-id",
-        "storageBucket": "your-project.appspot.com",
-        "messagingSenderId": "your-sender-id",
-        "appId": "your-app-id",
-        "measurementId": "your-measurement-id"
-    },
-    "api_key": "your-api-key",
-    "api_secret": "your-api-secret"
-}
-```
-
-8. Build and run the application:
+4. Install the binary:
 ```bash
-go build
-./notification-relay
+sudo mv notification-relay /usr/local/bin/
+sudo chmod +x /usr/local/bin/notification-relay
 ```
 
-## Running as a Systemd Service
-Create a systemd service file at `/etc/systemd/system/push-relay.service`:
+### Common Setup Steps
+After installing the binary (either pre-compiled or self-built):
 
+1. Create configuration directory:
+```bash
+sudo mkdir -p /etc/notification-relay
+```
+
+2. Create config.json (see Configuration section below)
+```bash
+sudo nano /etc/notification-relay/config.json
+```
+
+3. Set up systemd service:
+```bash
+sudo nano /etc/systemd/system/notification-relay.service
+```
+
+Add the following content:
 ```ini
 [Unit]
 Description=Frappe Push Notification Relay Server
@@ -52,19 +79,24 @@ After=network.target
 [Service]
 User=frappe
 Group=www-data
-WorkingDirectory=/home/frappe/relay-server
-Environment="GOOGLE_APPLICATION_CREDENTIALS=/home/frappe/relay-server/service-account.json"
-ExecStart=/home/frappe/relay-server/notification-relay
+WorkingDirectory=/etc/notification-relay
+Environment="GOOGLE_APPLICATION_CREDENTIALS=/etc/notification-relay/service-account.json"
+ExecStart=/usr/local/bin/notification-relay
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Enable and start the service:
+4. Start the service:
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable push-relay
-sudo systemctl start push-relay
+sudo systemctl enable notification-relay
+sudo systemctl start notification-relay
+```
+
+5. Check status:
+```bash
+sudo systemctl status notification-relay
 ```
 
 ## Configuration

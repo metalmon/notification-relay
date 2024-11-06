@@ -53,9 +53,29 @@ var (
 	icons        map[string]string
 	fbApp        *firebase.App
 	config       Config
+	configPath string
 )
 
 func init() {
+	// Check for config path in environment
+	configPath = os.Getenv("NOTIFICATION_RELAY_CONFIG")
+	if configPath == "" {
+		// Default paths in order of preference
+		paths := []string{
+			"./config.json",
+			"/etc/notification-relay/config.json",
+		}
+		for _, path := range paths {
+			if _, err := os.Stat(path); err == nil {
+				configPath = path
+				break
+			}
+		}
+	}
+	if configPath == "" {
+		log.Fatal("No config file found")
+	}
+
 	// Load configurations
 	loadConfig()
 	
