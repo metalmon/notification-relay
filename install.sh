@@ -73,10 +73,18 @@ if [ ! -f /etc/notification-relay/config.json ]; then
     cat > /etc/notification-relay/config.json << EOL
 {
     "vapid_public_key": "",
-    "firebase_config": {}
+    "firebase_config": {
+        "apiKey": "",
+        "authDomain": "",
+        "projectId": "",
+        "storageBucket": "",
+        "messagingSenderId": "",
+        "appId": "",
+        "measurementId": ""
+    }
 }
 EOL
-    print_warning "Please edit /etc/notification-relay/config.json with your configuration"
+    print_warning "Please edit /etc/notification-relay/config.json with your VAPID key and Firebase configuration"
 fi
 
 # Create credentials file if it doesn't exist
@@ -102,7 +110,7 @@ systemctl enable notification-relay
 
 print_status "Installation complete!"
 echo -e "${GREEN}Next steps:${NC}"
-echo "1. Edit /etc/notification-relay/config.json with your configuration"
+echo "1. Edit /etc/notification-relay/config.json with your VAPID key and Firebase configuration"
 echo "2. Place your Firebase service account JSON file at /etc/notification-relay/service-account.json"
 echo "3. Start the service with: systemctl start notification-relay"
 echo "4. Check status with: systemctl status notification-relay" 

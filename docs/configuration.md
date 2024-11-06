@@ -3,43 +3,39 @@
 ## File Structure
 The server uses several JSON configuration files:
 
-1. `config.json` - Main configuration file
-2. `decoration.json` - Notification decoration rules
-3. `icons.json` - Project icon paths
-4. `user-device-map.json` - User device token mapping
-5. `credentials.json` - API credentials for authenticated sites
-
-## credentials.json
-
-This file stores the API credentials for authenticated sites:
-
-```json
-{
-    "api_key_1": "api_secret_1",
-    "api_key_2": "api_secret_2"
-}
-```
-
-This file is automatically managed by the server - you don't need to edit it manually.
+1. `config.json` - Firebase and VAPID configuration
+2. `credentials.json` - Generated API credentials for authenticated sites
+3. `decoration.json` - Notification decoration rules
+4. `icons.json` - Project icon paths
+5. `user-device-map.json` - User device token mapping
 
 ## config.json
 
-Main configuration file containing API keys and Firebase settings:
+Main configuration file containing Firebase and VAPID settings:
 
 ```json
 {
     "vapid_public_key": "your_vapid_public_key",
     "firebase_config": {
-        "apiKey": "your-api-key",
+        "apiKey": "your-firebase-api-key",
         "authDomain": "your-project.firebaseapp.com",
         "projectId": "your-project-id",
         "storageBucket": "your-project.appspot.com",
         "messagingSenderId": "your-sender-id",
         "appId": "your-app-id",
         "measurementId": "your-measurement-id"
-    },
-    "api_key": "your-api-key",
-    "api_secret": "your-api-secret"
+    }
+}
+```
+
+## credentials.json
+
+This file stores the API credentials for authenticated sites. It is automatically managed by the server through the `/api/method/notification_relay.api.auth.get_credential` endpoint:
+
+```json
+{
+    "generated_api_key_1": "generated_api_secret_1",
+    "generated_api_key_2": "generated_api_secret_2"
 }
 ```
 
