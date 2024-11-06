@@ -1,0 +1,8 @@
+{
+    "vapid_public_key": "your_vapid_public_key",
+    "firebase_config": {
+        // Your Firebase configuration here
+    },
+    "api_key": "pfZOoRCW-kHtAHQcqiDvb_sy5o8Hj14J_ahUBQgPfOI",
+    "api_secret": "your_api_secret"
+} 
