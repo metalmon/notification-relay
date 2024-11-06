@@ -1,10 +1,11 @@
 import logging
 import firebase_admin
 import json
+import re
 from firebase_admin import exceptions, messaging
 from flask import Flask, request, jsonify
 from flask_httpauth import HTTPBasicAuth
-from my_secrets import API_SECRET, FIREBASE_CONFIG, VAPID_PUBLIC_KEY, BADGE_ICON
+from my_secrets import API_SECRET, FIREBASE_CONFIG, VAPID_PUBLIC_KEY # BADGE_ICON ToDo
 
 app = Flask(__name__)
 firebase_app = firebase_admin.initialize_app()
@@ -13,12 +14,58 @@ basic_auth = HTTPBasicAuth()
 
 API_KEY = 'pfZOoRCW-kHtAHQcqiDvb_sy5o8Hj14J_ahUBQgPfOI'
 
-USER_DEVICE_MAP = {'raven_erpsgs.in':{}, 'hrms_erpsgs.in':{}}
+USER_DEVICE_MAP = {'raven_erp-omniverse.com':{}, 'hrms_erp-omniverse.com':{}, 'crm_erp-omniverse.com':{}}
+
+DECORATION = {
+    'raven_erp-omniverse.com': {
+        'new_message': {'pattern': r'.*?(New message|Message received).*?', 'template': '💬 {title}'},
+        'mention': {'pattern': r'.*?(mentioned you|tagged you).*?', 'template': '👋 {title}'},
+        'chat_invite': {'pattern': r'.*?(invited you to chat|new chat invitation).*?', 'template': '👥 {title}'}
+    },
+    'hrms_erp-omniverse.com': {
+        'info': {'pattern': r'.*?(Info|Notice|Note).*?', 'template': 'ℹ️ {title}'},
+        'leave_request': {'pattern': r'.*?(Leave Request|Time Off Request).*?', 'template': '🗓️ {title}'},
+        'timesheet': {'pattern': r'.*?(Timesheet|Time Entry).*?', 'template': '⏰ {title}'},
+        'payroll': {'pattern': r'.*?(Payroll|Salary|Payment).*?', 'template': '💰 {title}'},
+        'attendance': {'pattern': r'.*?(Attendance|Check-in|Check-out).*?', 'template': '📋 {title}'}
+    },
+    'crm_erp-omniverse.com': {
+        'new_lead': {'pattern': r'.*?(New Lead|Lead Created).*?', 'template': '💯💰 {title}'},
+        'new_message': {'pattern': r'.*?(New Message|Message Received).*?', 'template': '📨 {title}'},
+        'meeting': {'pattern': r'.*?(Meeting|Appointment|Schedule).*?', 'template': '📅 {title}'},
+        'task': {'pattern': r'.*?(Task|Todo|Assignment).*?', 'template': '✔️ {title}'}
+    }
+}
+
+ICONS = {
+    'raven_erp-omniverse.com': 'icons/raven.png',
+    'hrms_erp-omniverse.com': 'icons/hrms.png',
+    'crm_erp-omniverse.com': 'icons/crm.png'
+}
 
 TOPICS = []
 
-with open('user-device-map.json', 'r') as jsonfile:
-		USER_DEVICE_MAP = json.load(jsonfile)
+import os
+
+def ensure_file_exists(filename, default_value):
+    if not os.path.exists(filename):
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        with open(filename, 'w') as jsonfile:
+            json.dump(default_value, jsonfile)
+
+def load_json_file(filename, default_value):
+    ensure_file_exists(filename, default_value)
+    with open(filename, 'r') as jsonfile:
+        return json.load(jsonfile)
+
+# Ensure files exist and load data
+ensure_file_exists('user-device-map.json', USER_DEVICE_MAP)
+ensure_file_exists('decoration.json', DECORATION)
+ensure_file_exists('icons.json', ICONS)
+
+USER_DEVICE_MAP = load_json_file('user-device-map.json', USER_DEVICE_MAP)
+DECORATION = load_json_file('decoration.json', DECORATION)
+ICONS = {k: v for k, v in load_json_file('icons.json', ICONS).items() if os.path.exists(v)}
 
 def save_map_to_file(map):
 	with open('user-device-map.json', 'w') as jsonfile:
@@ -168,7 +215,15 @@ def send_notification_to_user():
 	data = json.loads(request.args.get('data'))
 	notification_icon = data.get('notification_icon')
 	if not notification_icon:
-		notification_icon = ''
+		notification_icon = ICONS.get(key, '')
+
+	# Check title against decoration patterns if project exists
+	if key in DECORATION:
+		for notification_type, config in DECORATION[key].items():
+			if re.match(config['pattern'], title):
+				title = config['template'].format(title=title)
+				break
+
 	app.logger.debug(f'User Notification Request - {request.args}')
 	registration_tokens = []
 	if user_id in USER_DEVICE_MAP.get(key) and USER_DEVICE_MAP.get(key).get(user_id):
@@ -178,8 +233,9 @@ def send_notification_to_user():
 				notification=messaging.WebpushNotification(
 					title=title,
 					body=body,
-					icon= notification_icon,
-					badge= BADGE_ICON
+					icon=notification_icon,
+					#ToDo: Badge count server-side
+					#badge=BADGE_ICON
 				),
 				fcm_options=messaging.WebpushFCMOptions(link=data.get('click_action')),
 			),
