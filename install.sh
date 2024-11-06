@@ -73,12 +73,19 @@ if [ ! -f /etc/notification-relay/config.json ]; then
     cat > /etc/notification-relay/config.json << EOL
 {
     "vapid_public_key": "",
-    "firebase_config": {},
-    "api_key": "",
-    "api_secret": ""
+    "firebase_config": {}
 }
 EOL
     print_warning "Please edit /etc/notification-relay/config.json with your configuration"
+fi
+
+# Create credentials file if it doesn't exist
+if [ ! -f /etc/notification-relay/credentials.json ]; then
+    print_status "Creating credentials file..."
+    cat > /etc/notification-relay/credentials.json << EOL
+{}
+EOL
+    chmod 600 /etc/notification-relay/credentials.json
 fi
 
 # Set proper permissions
@@ -86,6 +93,7 @@ print_status "Setting permissions..."
 chown -R frappe:www-data /etc/notification-relay
 chmod 750 /etc/notification-relay
 chmod 640 /etc/notification-relay/config.json
+chmod 600 /etc/notification-relay/credentials.json
 
 # Reload systemd and enable service
 print_status "Enabling service..."

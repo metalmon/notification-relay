@@ -102,7 +102,8 @@ sudo systemctl status notification-relay
 ## Configuration
 The server uses the following configuration files:
 
-- `config.json`: Main configuration file containing API keys and Firebase config
+- `config.json`: Main configuration file containing VAPID key and Firebase config
+- `credentials.json`: Stores API keys and secrets for authenticated sites
 - `user-device-map.json`: Maps users to their device tokens
 - [`decoration.json`](docs/decoration.md): Notification decoration rules and patterns
 - [`icons.json`](docs/icons.md): Icon paths for different projects
