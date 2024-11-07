@@ -32,7 +32,7 @@ mkdir -p /var/log/notification-relay
 
 # Download and install binary
 print_status "Downloading latest release..."
-LATEST_RELEASE=$(curl -s https://api.github.com/repos/metalmon/relay-server/releases/latest | grep "browser_download_url.*tar.gz" | cut -d : -f 2,3 | tr -d \")
+LATEST_RELEASE=$(curl -s https://api.github.com/repos/metalmon/notification-relay/releases/latest | grep "browser_download_url.*tar.gz" | cut -d : -f 2,3 | tr -d \")
 
 if [ -z "$LATEST_RELEASE" ]; then
     print_error "Failed to get latest release URL"

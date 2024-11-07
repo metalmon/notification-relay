@@ -38,9 +38,9 @@ jobs:
             
             ## Installation
             ```bash
-            wget https://github.com/metalmon/relay-server/releases/download/${{ github.ref_name }}/notification-relay-linux-amd64.tar.gz
+            wget https://github.com/metalmon/rnotification-relay/releases/download/${{ github.ref_name }}/notification-relay-linux-amd64.tar.gz
             tar xzf notification-relay-linux-amd64.tar.gz
             sudo mv notification-relay-linux-amd64 /usr/local/bin/notification-relay
             ```
             
-            For complete installation instructions, see the [README](https://github.com/metalmon/relay-server#quick-installation-ubuntu) 
+            For complete installation instructions, see the [README](https://github.com/metalmon/rnotification-relay#quick-installation-ubuntu) 

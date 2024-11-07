@@ -6,7 +6,7 @@ This repo provides a push notification relay server for Frappe Apps such as Rave
 ### Option 1: Easy Installation Script
 Run the following command to automatically download and install everything:
 ```bash
-curl -sSL https://raw.githubusercontent.com/metalmon/relay-server/main/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/metalmon/notification-relay/go/install.sh | sudo bash
 ```
 
 After installation:
@@ -20,7 +20,7 @@ sudo systemctl start notification-relay
 ### Option 2: Quick Installation (Pre-compiled Binary)
 1. Download the latest release:
 ```bash
-wget https://github.com/metalmon/relay-server/releases/latest/download/notification-relay-linux-amd64.tar.gz
+wget https://github.com/metalmon/notification-relay/releases/latest/download/notification-relay-linux-amd64.tar.gz
 ```
 
 2. Extract the binary:
@@ -36,8 +36,8 @@ If you prefer to compile the binary yourself:
 1. Install Go (version 1.21 or higher)
 2. Clone this repository:
 ```bash
-git clone https://github.com/metalmon/relay-server.git
-cd relay-server
+git clone https://github.com/metalmon/notification-relay.git
+cd notification-relay
 ```
 
 3. Install dependencies and build:
