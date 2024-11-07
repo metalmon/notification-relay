@@ -20,39 +20,21 @@ on:
 permissions: read-all
 
 jobs:
-  setup:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v3.1.1
-        with:
-          cosign-release: 'v2.1.1'
-
-      - name: Install syft
-        uses: anchore/sbom-action/download-syft@v0.14.3
-
-      # Add explicit step to setup Go
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.21'
-          check-latest: true
-
   build:
-    needs: setup
     permissions:
       id-token: write
       contents: write
       actions: read
-    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v1.9.0
+    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.0.0
     with:
-      go-version: 1.21
+      go-version: '1.21'
       evaluated-envs: |
         {
           "VERSION": "${{ github.ref_name }}",
           "BUILD_TIME": "${{ github.event.repository.updated_at }}",
           "GIT_COMMIT": "${{ github.sha }}"
         }
-      config-file: .slsa-goreleaser.yml
-      prerelease: false
+      config-file: '.slsa-goreleaser.yml'
+      upload-assets: true
+      upload-tag-name: ${{ github.ref_name }}
 
