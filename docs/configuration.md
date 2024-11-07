@@ -1,5 +1,13 @@
 # Configuration Guide
 
+## Environment Variables
+
+- `NOTIFICATION_RELAY_CONFIG`: Path to the configuration directory. If not set, the server will look for configuration files in the following locations in order:
+  1. `./config.json`
+  2. `/etc/notification-relay/config.json`
+
+- `LISTEN_PORT`: Server port number. If not set, defaults to `5000`
+
 ## File Structure
 The server uses several JSON configuration files:
 

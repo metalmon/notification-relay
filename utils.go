@@ -2,15 +2,19 @@ package main
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
-
-	"github.com/gin-gonic/gin"
 )
 
 var (
 	configPath string
 )
+
+func getConfigPath(filename string) string {
+	dir := filepath.Dir(configPath)
+	return filepath.Join(dir, filename)
+}
 
 func init() {
 	// Check for config path in environment
@@ -18,8 +22,8 @@ func init() {
 	if configPath == "" {
 		// Default paths in order of preference
 		paths := []string{
-			"./config.json",
-			"/etc/notification-relay/config.json",
+			"./" + ConfigJSON,
+			"/etc/notification-relay/" + ConfigJSON,
 		}
 		for _, path := range paths {
 			if _, err := os.Stat(path); err == nil {
@@ -33,21 +37,10 @@ func init() {
 	}
 }
 
-func basicAuth() gin.HandlerFunc {
-	return gin.BasicAuth(gin.Accounts{
-		config.APIKey: config.APISecret,
-	})
-}
-
 func loadDataFiles() {
-	ensureFileExists("user-device-map.json", &userDeviceMap)
-	ensureFileExists("decoration.json", &decorations)
-	ensureFileExists("icons.json", &icons)
-}
-
-func getConfigPath(filename string) string {
-	dir := filepath.Dir(configPath)
-	return filepath.Join(dir, filename)
+	ensureFileExists(UserDeviceMapJSON, &userDeviceMap)
+	ensureFileExists(DecorationJSON, &decorations)
+	ensureFileExists(IconsJSON, &icons)
 }
 
 func ensureFileExists(filename string, defaultValue interface{}) {
@@ -74,4 +67,4 @@ func saveJSON(filename string, v interface{}) error {
 		return err
 	}
 	return os.WriteFile(fullPath, data, 0644)
-} 
+}

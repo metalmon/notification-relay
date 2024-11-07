@@ -2,6 +2,7 @@ env/
 .vscode/
 log/
 __pycache__
+.context/
 erpsgs-frappe-firebase-adminsdk-cred.json
 firebase-config.json
 my_secrets.py
