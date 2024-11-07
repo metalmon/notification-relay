@@ -20,7 +20,18 @@ on:
 permissions: read-all
 
 jobs:
+  # Add a setup job to handle the Rekor keys
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3.1.1
+
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@v0.14.3
+
   build:
+    needs: setup
     permissions:
       id-token: write
       contents: write
@@ -34,4 +45,6 @@ jobs:
           "BUILD_TIME": "${{ github.event.repository.updated_at }}",
           "GIT_COMMIT": "${{ github.sha }}"
         }
+      config-file: .slsa-goreleaser.yml
+      prerelease: false
 
