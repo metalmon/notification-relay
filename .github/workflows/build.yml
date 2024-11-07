@@ -1,0 +1,35 @@
+name: Go Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.21
+
+      - name: Install Sigstore
+        run: |
+          go install github.com/sigstore/cosign/cmd/cosign@latest
+          go install github.com/sigstore/rekor/cmd/rekor-cli@latest
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Verify with Sigstore
+        run: |
+          cosign verify <your-image>
+          rekor-cli verify --rekor_server https://rekor.sigstore.dev <your-artifact> 
