@@ -20,19 +20,18 @@ on:
 permissions: read-all
 
 jobs:
-  # ========================================================================================================================================
-  #     Prerequesite: Create a .slsa-goreleaser.yml in the root directory of your project.
-  #       See format in https://github.com/slsa-framework/slsa-github-generator/blob/main/internal/builders/go/README.md#configuration-file
-  #=========================================================================================================================================
   build:
     permissions:
-      id-token: write # To sign.
-      contents: write # To upload release assets.
-      actions: read   # To read workflow path.
+      id-token: write
+      contents: write
+      actions: read
     uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.0.0
     with:
       go-version: 1.21
-      # =============================================================================================================
-      #     Optional: For more options, see https://github.com/slsa-framework/slsa-github-generator#golang-projects
-      # =============================================================================================================
+      evaluated-envs: |
+        {
+          "VERSION": "${{ github.ref_name }}",
+          "BUILD_TIME": "${{ github.event.repository.updated_at }}",
+          "GIT_COMMIT": "${{ github.sha }}"
+        }
 

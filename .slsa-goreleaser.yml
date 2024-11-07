@@ -17,20 +17,13 @@ goos: linux
 # The architecture to compile for. `GOARCH` env variable will be set to this value.
 goarch: amd64
 
-# (Optional) Entrypoint to compile.
-# main: ./path/to/main.go
-
-# (Optional) Working directory. (default: root of the project)
-# dir: ./relative/path/to/dir
-
 # Binary output name.
-# {{ .Os }} will be replaced by goos field in the config file.
-# {{ .Arch }} will be replaced by goarch field in the config file.
-binary: binary-{{ .Os }}-{{ .Arch }}
+binary: notification-relay-linux-amd64
 
-# (Optional) ldflags generated dynamically in the workflow, and set as the `evaluated-envs` input variables in the workflow.
+# Version information through ldflags
 ldflags:
+  - "-s"  # Strip debug information
+  - "-w"  # Strip DWARF symbol table
   - "-X main.Version={{ .Env.VERSION }}"
-  - "-X main.Commit={{ .Env.COMMIT }}"
-  - "-X main.CommitDate={{ .Env.COMMIT_DATE }}"
-  - "-X main.TreeState={{ .Env.TREE_STATE }}"
+  - "-X main.BuildTime={{ .Env.BUILD_TIME }}"
+  - "-X main.GitCommit={{ .Env.GIT_COMMIT }}"

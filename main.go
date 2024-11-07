@@ -58,6 +58,11 @@ var (
 	icons         Icons
 	fbApp         *firebase.App
 	config        Config
+
+	// Version information
+	Version   string = "dev"
+	BuildTime string
+	GitCommit string
 )
 
 func apiBasicAuth() gin.HandlerFunc {
@@ -109,6 +114,9 @@ func init() {
 }
 
 func main() {
+	// Log version information
+	log.Printf("Version: %s, Build Time: %s, Git Commit: %s", Version, BuildTime, GitCommit)
+
 	r := gin.Default()
 
 	// Add authentication middleware
