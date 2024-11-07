@@ -3,10 +3,10 @@ name: Go Build
 on:
   push:
     branches:
-      - main
+      - go
   pull_request:
     branches:
-      - main
+      - go
 
 jobs:
   build:
@@ -21,15 +21,9 @@ jobs:
         with:
           go-version: 1.21
 
-      - name: Install Sigstore
-        run: |
-          go install github.com/sigstore/cosign/cmd/cosign@latest
-          go install github.com/sigstore/rekor/cmd/rekor-cli@latest
-
       - name: Build
-        run: go build -v ./...
-
-      - name: Verify with Sigstore
         run: |
-          cosign verify <your-image>
-          rekor-cli verify --rekor_server https://rekor.sigstore.dev <your-artifact> 
+          GOOS=linux GOARCH=amd64 go build -o notification-relay-linux-amd64
+
+      - name: Archive binary
+        run: tar czf notification-relay-linux-amd64.tar.gz notification-relay-linux-amd64
