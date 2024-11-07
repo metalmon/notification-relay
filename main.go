@@ -59,10 +59,10 @@ var (
 	fbApp         *firebase.App
 	config        Config
 
-	// Version information
-	Version   string = "dev"
-	BuildTime string
-	GitCommit string
+	// Version information - these will be set by ldflags during build
+	Version   = "dev"     // Will be set to github.ref_name
+	BuildTime = "unknown" // Will be set to github.event.repository.updated_at
+	GitCommit = "unknown" // Will be set to github.sha
 )
 
 func apiBasicAuth() gin.HandlerFunc {
