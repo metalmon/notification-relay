@@ -3,104 +3,174 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"log"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"regexp"
 	"testing"
 
+	"firebase.google.com/go/v4/messaging"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )
 
-func init() {
-	// Create test service account file
-	testServiceAccount := `{
-		"type": "service_account",
-		"project_id": "test-project",
-		"private_key_id": "test",
-		"private_key": "test",
-		"client_email": "test@test.com",
-		"client_id": "test",
-		"auth_uri": "https://accounts.google.com/o/oauth2/auth",
-		"token_uri": "https://oauth2.googleapis.com/token",
-		"auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-		"client_x509_cert_url": "test"
-	}`
-
-	err := os.MkdirAll("testdata/etc/notification-relay", 0o700)
-	if err != nil {
-		log.Fatal(err)
+func TestGenerateSecureToken(t *testing.T) {
+	tests := []struct {
+		name   string
+		length int
+	}{
+		{
+			name:   "Generate 32 char token",
+			length: 32,
+		},
+		{
+			name:   "Generate 48 char token",
+			length: 48,
+		},
+		{
+			name:   "Generate 16 char token",
+			length: 16,
+		},
 	}
 
-	err = os.WriteFile("testdata/etc/notification-relay/service-account.json", []byte(testServiceAccount), 0o600)
-	if err != nil {
-		log.Fatal(err)
+	// Регулярное выражение для проверки допустимых символов
+	validChars := regexp.MustCompile(`^[a-zA-Z0-9]+$`)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Генерируем токен
+			token := generateSecureToken(tt.length)
+
+			// Проверяем длину
+			if len(token) != tt.length {
+				t.Errorf("generateSecureToken() length = %v, want %v", len(token), tt.length)
+			}
+
+			// Проверяем, что токен содержит только допустимые символы
+			if !validChars.MatchString(token) {
+				t.Errorf("generateSecureToken() contains invalid characters: %v", token)
+			}
+
+			// Проверяем уникальность - генерируем второй токен и сравниваем
+			token2 := generateSecureToken(tt.length)
+			if token == token2 {
+				t.Error("generateSecureToken() generated identical tokens")
+			}
+		})
 	}
-
-	// Set environment variable for tests
-	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "testdata/etc/notification-relay/service-account.json")
-}
-
-func setupTestRouter() *gin.Engine {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	return r
 }
 
 func TestGetCredential(t *testing.T) {
-	router := setupTestRouter()
-	router.POST("/api/method/notification_relay.api.auth.get_credential", getCredential)
+	// Переключаем Gin в тестовый режим
+	gin.SetMode(gin.TestMode)
+
+	// Инициализируем credentials map
+	credentials = make(Credentials)
+
+	// Создаем тестовый HTTP сервер для эмуляции webhook
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/valid-webhook" {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("valid-token"))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer testServer.Close()
 
 	tests := []struct {
 		name           string
 		request        CredentialRequest
 		expectedStatus int
-		expectedError  bool
+		wantSuccess    bool
+		wantMessage    string
 	}{
 		{
-			name: "Valid Request",
+			name: "Valid request",
 			request: CredentialRequest{
-				Endpoint:     "test.example.com",
-				Protocol:     "https",
-				Token:        "valid_token",
-				WebhookRoute: "/webhook",
+				Endpoint:     testServer.URL[7:], // удаляем "http://"
+				Protocol:     "http",
+				Token:        "valid-token",
+				WebhookRoute: "/valid-webhook",
 			},
-			expectedStatus: http.StatusBadRequest, // Will fail because webhook is not actually available
-			expectedError:  true,
+			expectedStatus: http.StatusOK,
+			wantSuccess:    true,
 		},
 		{
-			name: "Missing Endpoint",
+			name: "Missing endpoint",
 			request: CredentialRequest{
-				Protocol:     "https",
-				Token:        "valid_token",
-				WebhookRoute: "/webhook",
+				Protocol:     "http",
+				Token:        "valid-token",
+				WebhookRoute: "/valid-webhook",
 			},
 			expectedStatus: http.StatusBadRequest,
-			expectedError:  true,
+			wantSuccess:    false,
+			wantMessage:    "Missing required fields",
+		},
+		{
+			name: "Missing token",
+			request: CredentialRequest{
+				Endpoint:     testServer.URL[7:],
+				Protocol:     "http",
+				WebhookRoute: "/valid-webhook",
+			},
+			expectedStatus: http.StatusBadRequest,
+			wantSuccess:    false,
+			wantMessage:    "Missing required fields",
+		},
+		{
+			name: "Invalid webhook response",
+			request: CredentialRequest{
+				Endpoint:     testServer.URL[7:],
+				Protocol:     "http",
+				Token:        "invalid-token",
+				WebhookRoute: "/invalid-webhook",
+			},
+			expectedStatus: http.StatusUnauthorized,
+			wantSuccess:    false,
+			wantMessage:    "Token verification failed",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body, _ := json.Marshal(tt.request)
-			req := httptest.NewRequest("POST", "/api/method/notification_relay.api.auth.get_credential", bytes.NewBuffer(body))
-			req.Header.Set("Content-Type", "application/json")
-
+			// Создаем новый тестовый контекст Gin для каждого теста
 			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
+			c, _ := gin.CreateTestContext(w)
 
-			assert.Equal(t, tt.expectedStatus, w.Code)
-
-			var response CredentialResponse
-			err := json.Unmarshal(w.Body.Bytes(), &response)
+			// Подготавливаем JSON запрос
+			jsonData, err := json.Marshal(tt.request)
 			assert.NoError(t, err)
 
-			if tt.expectedError {
-				assert.False(t, response.Success)
-				assert.NotEmpty(t, response.Message)
-			} else {
-				assert.True(t, response.Success)
+			// Создаем новый запрос с JSON данными
+			c.Request, err = http.NewRequest(
+				http.MethodPost,
+				"/api/method/notification_relay.api.auth.get_credential",
+				bytes.NewBuffer(jsonData),
+			)
+			assert.NoError(t, err)
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			// Вызываем тестируемую функцию
+			getCredential(c)
+
+			// Проверяем статус ответа
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			// Разбираем ответ
+			var response CredentialResponse
+			err = json.Unmarshal(w.Body.Bytes(), &response)
+			assert.NoError(t, err)
+
+			// Проверяем успешность операции
+			assert.Equal(t, tt.wantSuccess, response.Success)
+
+			// Если ожидается сообщение об ошибке, проверяем его
+			if tt.wantMessage != "" {
+				assert.Equal(t, tt.wantMessage, response.Message)
+			}
+
+			// Для успешного запроса проверяем наличие учетных данных
+			if tt.wantSuccess {
 				assert.NotNil(t, response.Credentials)
 				assert.NotEmpty(t, response.Credentials.APIKey)
 				assert.NotEmpty(t, response.Credentials.APISecret)
@@ -110,73 +180,178 @@ func TestGetCredential(t *testing.T) {
 }
 
 func TestAPIBasicAuth(t *testing.T) {
-	router := setupTestRouter()
+	// Переключаем Gin в тестовый режим
+	gin.SetMode(gin.TestMode)
 
-	// Setup test credentials
+	// Инициализируем тестовые учетные данные
 	credentials = make(Credentials)
-	credentials["test_key"] = "test_secret"
-
-	// Add authentication middleware and test handler
-	auth := router.Group("/", apiBasicAuth())
-	auth.GET("/test", func(c *gin.Context) {
-		c.JSON(http.StatusOK, Response{
-			Message: &SuccessResponse{
-				Success: 200,
-				Message: "Authenticated",
-			},
-		})
-	})
+	credentials["test-key"] = "test-secret"
 
 	tests := []struct {
-		name           string
-		apiKey         string
-		apiSecret      string
-		expectedStatus int
+		name            string
+		apiKey          string
+		apiSecret       string
+		expectedStatus  int
+		checkAuthHeader bool // Добавляем флаг для проверки заголовка
 	}{
 		{
-			name:           "Valid Credentials",
-			apiKey:         "test_key",
-			apiSecret:      "test_secret",
-			expectedStatus: http.StatusOK,
+			name:            "Valid credentials",
+			apiKey:          "test-key",
+			apiSecret:       "test-secret",
+			expectedStatus:  200,
+			checkAuthHeader: false,
 		},
 		{
-			name:           "Invalid API Key",
-			apiKey:         "wrong_key",
-			apiSecret:      "test_secret",
-			expectedStatus: http.StatusUnauthorized,
+			name:            "Invalid key",
+			apiKey:          "wrong-key",
+			apiSecret:       "test-secret",
+			expectedStatus:  401,
+			checkAuthHeader: false,
 		},
 		{
-			name:           "Invalid API Secret",
-			apiKey:         "test_key",
-			apiSecret:      "wrong_secret",
-			expectedStatus: http.StatusUnauthorized,
+			name:            "Invalid secret",
+			apiKey:          "test-key",
+			apiSecret:       "wrong-secret",
+			expectedStatus:  401,
+			checkAuthHeader: false,
 		},
 		{
-			name:           "No Authentication",
-			apiKey:         "",
-			apiSecret:      "",
-			expectedStatus: http.StatusUnauthorized,
+			name:            "Missing credentials",
+			apiKey:          "",
+			apiSecret:       "",
+			expectedStatus:  401,
+			checkAuthHeader: true, // Проверяем заголовок только для отсутствующих credentials
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/test", http.NoBody)
+			// Создаем тестовый роутер
+			router := gin.New()
+
+			// Добавляем middleware и тестовый обработчик
+			router.Use(apiBasicAuth())
+			router.GET("/test", func(c *gin.Context) {
+				c.Status(http.StatusOK)
+			})
+
+			// Создаем тестовый запрос
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest("GET", "/test", nil)
+
+			// Добавляем Basic Auth заголовок, если есть учетные данные
 			if tt.apiKey != "" || tt.apiSecret != "" {
 				req.SetBasicAuth(tt.apiKey, tt.apiSecret)
 			}
-			w := httptest.NewRecorder()
+
+			// Выполняем запрос
 			router.ServeHTTP(w, req)
 
+			// Проверяем статус ответа
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
-			if tt.expectedStatus == http.StatusOK {
-				var response Response
-				err := json.Unmarshal(w.Body.Bytes(), &response)
+			// Проверяем заголовк WWW-Authenticate тол��ко если это необходимо
+			if tt.checkAuthHeader {
+				assert.Contains(t, w.Header().Get("WWW-Authenticate"), "Basic realm=")
+			}
+		})
+	}
+}
+
+func TestValidateNotificationParams(t *testing.T) {
+	tests := []struct {
+		name      string
+		title     string
+		body      string
+		wantError bool
+	}{
+		{
+			name:      "Valid params",
+			title:     "Test Title",
+			body:      "Test Body",
+			wantError: false,
+		},
+		{
+			name:      "Empty title",
+			title:     "",
+			body:      "Test Body",
+			wantError: true,
+		},
+		{
+			name:      "Empty body",
+			title:     "Test Title",
+			body:      "",
+			wantError: true,
+		},
+		{
+			name:      "Both empty",
+			title:     "",
+			body:      "",
+			wantError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateNotificationParams(tt.title, tt.body)
+			if tt.wantError {
+				assert.Error(t, err)
+			} else {
 				assert.NoError(t, err)
-				assert.NotNil(t, response.Message)
-				assert.Equal(t, 200, response.Message.Success)
-				assert.Equal(t, "Authenticated", response.Message.Message)
+			}
+		})
+	}
+}
+
+func TestAddIconToConfig(t *testing.T) {
+	// Инициализируем тестовые иконки
+	icons = make(map[string]string)
+	testKey := "test-project_test-site"
+	icons[testKey] = "/path/to/icon.png"
+
+	tests := []struct {
+		name   string
+		key    string
+		config *messaging.WebpushConfig
+		want   string
+	}{
+		{
+			name:   "Add icon to empty config",
+			key:    testKey,
+			config: &messaging.WebpushConfig{},
+			want:   "/path/to/icon.png",
+		},
+		{
+			name: "Add icon to config with existing data",
+			key:  testKey,
+			config: &messaging.WebpushConfig{
+				Data: map[string]string{
+					"existing": "data",
+				},
+			},
+			want: "/path/to/icon.png",
+		},
+		{
+			name:   "No icon for non-existent project",
+			key:    "non-existent",
+			config: &messaging.WebpushConfig{},
+			want:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addIconToConfig(tt.key, tt.config)
+
+			if tt.want == "" {
+				// Для проекта без иконки проверяем, что иконка не добавлена
+				if tt.config.Data != nil {
+					assert.Empty(t, tt.config.Data["icon"])
+				}
+			} else {
+				// Для проекта с иконкой проверяем, что она добавлена корректно
+				assert.NotNil(t, tt.config.Data)
+				assert.Equal(t, tt.want, tt.config.Data["icon"])
 			}
 		})
 	}

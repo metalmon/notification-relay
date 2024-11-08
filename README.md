@@ -33,6 +33,7 @@ EOL
 touch ~/.notification-relay/credentials.json
 touch ~/.notification-relay/user-device-map.json
 touch ~/.notification-relay/decoration.json
+touch ~/.notification-relay/topic-decoration.json
 touch ~/.notification-relay/icons.json
 
 # Set proper permissions
@@ -96,7 +97,8 @@ Firebase service account JSON file can be configured in several ways:
 - `config.json`: Main configuration file containing VAPID key and Firebase config
 - `credentials.json`: Stores API keys and secrets for authenticated sites
 - `user-device-map.json`: Maps users to their device tokens
-- [`decoration.json`](docs/decoration.md): Notification decoration rules and patterns
+- [`decoration.json`](docs/decoration.md): Notification decoration rules and patterns for user notifications
+- [`topic-decoration.json`](docs/decoration.md): Notification decoration rules and patterns for topic notifications
 - [`icons.json`](docs/icons.md): Icon paths for different projects
 
 For detailed configuration examples and structure, see the [configuration documentation](docs/configuration.md).

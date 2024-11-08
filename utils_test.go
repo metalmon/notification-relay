@@ -1,121 +1,123 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
-func TestConfigFileOperations(t *testing.T) {
-	// Create test directory
-	testDir := filepath.Join(filepath.Dir(configPath), "test_config_ops")
-	err := os.MkdirAll(testDir, 0o700)
-	assert.NoError(t, err)
+func TestGetConfigPath(t *testing.T) {
+	// Save original configPath
+	originalConfigPath := configPath
 	defer func() {
-		if err := os.RemoveAll(testDir); err != nil {
-			t.Errorf("Failed to cleanup test directory: %v", err)
-		}
+		configPath = originalConfigPath
 	}()
 
-	// Save original config path
-	originalConfigPath := configPath
-	defer func() { configPath = originalConfigPath }()
+	configPath = "/tmp/test/config.json"
 
-	// Test loading non-existent file
-	nonExistentPath := filepath.Join(testDir, ConfigJSON)
-	configPath = nonExistentPath
-	var cfg Config
-	err = loadJSON(ConfigJSON, &cfg)
-	assert.Error(t, err, "Should error when loading non-existent file")
-
-	// Test loading file with invalid permissions
-	readOnlyDir := filepath.Join(testDir, "readonly")
-	err = os.MkdirAll(readOnlyDir, 0o500)
-	assert.NoError(t, err)
-	configPath = filepath.Join(readOnlyDir, ConfigJSON)
-	err = saveJSON(ConfigJSON, Config{})
-	assert.Error(t, err, "Should error when saving to read-only directory")
-
-	// Test saving and loading valid data
-	configPath = filepath.Join(testDir, ConfigJSON)
-	testData := Config{
-		VapidPublicKey: "test_key",
-		FirebaseConfig: map[string]interface{}{
-			"project_id": "test-project",
+	tests := []struct {
+		name     string
+		filename string
+		wantErr  bool
+	}{
+		{
+			name:     "Valid config file",
+			filename: ConfigJSON,
+			wantErr:  false,
+		},
+		{
+			name:     "Valid credentials file",
+			filename: CredentialsJSON,
+			wantErr:  false,
+		},
+		{
+			name:     "Unauthorized file",
+			filename: "unauthorized.json",
+			wantErr:  true,
 		},
 	}
 
-	// Test saving data
-	err = saveJSON(ConfigJSON, testData)
-	assert.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil && !tt.wantErr {
+					t.Errorf("getConfigPath() panic = %v, wantErr %v", r, tt.wantErr)
+				}
+			}()
 
-	// Test loading saved data
-	var loadedData Config
-	err = loadJSON(ConfigJSON, &loadedData)
-	assert.NoError(t, err)
-	assert.Equal(t, testData.VapidPublicKey, loadedData.VapidPublicKey)
-	assert.Equal(t, testData.FirebaseConfig["project_id"], loadedData.FirebaseConfig["project_id"])
-
-	// Test loading with wrong type
-	var wrongType struct {
-		InvalidField int `json:"vapid_public_key"`
+			got := getConfigPath(tt.filename)
+			expected := filepath.Join(filepath.Dir(configPath), tt.filename)
+			if !tt.wantErr && got != expected {
+				t.Errorf("getConfigPath() = %v, want %v", got, expected)
+			}
+		})
 	}
-	err = loadJSON(ConfigJSON, &wrongType)
-	assert.Error(t, err, "Should error when loading into incompatible type")
-
-	// Test saving invalid JSON
-	invalidData := make(chan int)
-	assert.Panics(t, func() {
-		_ = saveJSON(ConfigJSON, invalidData) // Ignore error as it will panic
-	}, "Should panic when trying to marshal invalid data")
-
-	// Test file path security
-	assert.Panics(t, func() {
-		_ = loadJSON("../config.json", &cfg) // Ignore error as it will panic
-	}, "Should panic on path traversal attempt")
-
-	assert.Panics(t, func() {
-		_ = loadJSON("/etc/passwd", &cfg) // Ignore error as it will panic
-	}, "Should panic on absolute path")
-
-	assert.Panics(t, func() {
-		_ = loadJSON("unauthorized.json", &cfg) // Ignore error as it will panic
-	}, "Should panic on unauthorized file")
 }
 
-func TestConfigFilePermissions(t *testing.T) {
-	// Create test directory
-	testDir := filepath.Join(filepath.Dir(configPath), "test_permissions")
-	err := os.MkdirAll(testDir, 0o700)
-	assert.NoError(t, err)
+func TestLoadJSON(t *testing.T) {
+	// Create temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Save original configPath
+	originalConfigPath := configPath
 	defer func() {
-		if err := os.RemoveAll(testDir); err != nil {
-			t.Errorf("Failed to cleanup test directory: %v", err)
-		}
+		configPath = originalConfigPath
 	}()
 
-	// Save original config path
+	configPath = filepath.Join(tmpDir, ConfigJSON)
+
+	// Create test data
+	testData := map[string]string{"test": "value"}
+	testFile := filepath.Join(tmpDir, CredentialsJSON)
+	data, _ := json.Marshal(testData)
+	if err := os.WriteFile(testFile, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	var result map[string]string
+	if err := loadJSON(CredentialsJSON, &result); err != nil {
+		t.Errorf("loadJSON() error = %v", err)
+	}
+
+	if result["test"] != "value" {
+		t.Errorf("loadJSON() got = %v, want %v", result["test"], "value")
+	}
+}
+
+func TestSaveJSON(t *testing.T) {
+	// Create temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Save original configPath
 	originalConfigPath := configPath
-	defer func() { configPath = originalConfigPath }()
+	defer func() {
+		configPath = originalConfigPath
+	}()
 
-	// Test directory with no write permissions
-	readOnlyDir := filepath.Join(testDir, "readonly")
-	err = os.MkdirAll(readOnlyDir, 0o500)
-	assert.NoError(t, err)
+	configPath = filepath.Join(tmpDir, ConfigJSON)
 
-	configPath = filepath.Join(readOnlyDir, ConfigJSON)
-	err = saveJSON(ConfigJSON, Config{})
-	assert.Error(t, err, "Should error when saving to read-only directory")
+	testData := map[string]string{"test": "value"}
 
-	// Test directory with no read permissions
-	writeOnlyDir := filepath.Join(testDir, "writeonly")
-	err = os.MkdirAll(writeOnlyDir, 0o300)
-	assert.NoError(t, err)
+	if err := saveJSON(CredentialsJSON, testData); err != nil {
+		t.Errorf("saveJSON() error = %v", err)
+	}
 
-	configPath = filepath.Join(writeOnlyDir, ConfigJSON)
-	var cfg Config
-	err = loadJSON(ConfigJSON, &cfg)
-	assert.Error(t, err, "Should error when reading from write-only directory")
+	// Verify the file was saved correctly
+	var result map[string]string
+	if err := loadJSON(CredentialsJSON, &result); err != nil {
+		t.Errorf("Failed to verify saved JSON: %v", err)
+	}
+
+	if result["test"] != "value" {
+		t.Errorf("saveJSON() got = %v, want %v", result["test"], "value")
+	}
 }

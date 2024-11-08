@@ -19,7 +19,8 @@ const (
 	// UserDeviceMapJSON maps users to their device tokens
 	UserDeviceMapJSON = "user-device-map.json"
 	// DecorationJSON contains notification decoration rules
-	DecorationJSON = "decoration.json"
+	DecorationJSON      = "decoration.json"
+	TopicDecorationJSON = "topic-decoration.json"
 	// IconsJSON maps projects to their icon paths
 	IconsJSON = "icons.json"
 )
@@ -28,7 +29,8 @@ var (
 	fbApp              *firebase.App
 	config             Config
 	userDeviceMap      = make(map[string]map[string][]string)
-	decorations        = make(map[string][]Decoration)
+	decorations        = make(map[string]map[string]Decoration)
+	topicDecorations   = make(map[string]TopicDecoration)
 	icons              = make(map[string]string)
 	serviceAccountPath string
 )
@@ -73,11 +75,6 @@ func main() {
 	fbApp, err = firebase.NewApp(ctx, nil, opt)
 	if err != nil {
 		log.Fatalf("Failed to initialize Firebase: %v", err)
-	}
-
-	// Initialize Firebase Messaging
-	if err := initMessaging(fbApp); err != nil {
-		log.Fatalf("Failed to initialize Firebase Messaging: %v", err)
 	}
 
 	// Initialize credentials

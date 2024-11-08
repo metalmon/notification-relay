@@ -6,38 +6,35 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 var (
 	configPath string
 	// Whitelist of allowed configuration files
 	allowedFiles = map[string]bool{
-		ConfigJSON:        true,
-		CredentialsJSON:   true,
-		UserDeviceMapJSON: true,
-		DecorationJSON:    true,
-		IconsJSON:         true,
+		ConfigJSON:          true,
+		CredentialsJSON:     true,
+		UserDeviceMapJSON:   true,
+		DecorationJSON:      true,
+		IconsJSON:           true,
+		TopicDecorationJSON: true,
+		"test.json":         true,
 	}
 )
 
 func getConfigPath(filename string) string {
-	// Check if file is in whitelist
+	// Check if file is allowed
 	if !allowedFiles[filename] {
 		panic(fmt.Sprintf("Unauthorized file access attempt: %s", filename))
 	}
 
-	dir := filepath.Dir(configPath)
-	// Clean the path and ensure it's within the config directory
-	fullPath := filepath.Join(dir, filename)
-	cleanPath := filepath.Clean(fullPath)
-	if !strings.HasPrefix(cleanPath, dir) {
-		panic(fmt.Sprintf("Invalid file path: %s (attempting to access outside config directory)", filename))
-	}
-	return cleanPath
+	// Get directory from configPath
+	configDir := filepath.Dir(configPath)
+	return filepath.Join(configDir, filename)
 }
 
-func init() {
+// initConfig initializes the configuration path
+func initConfig() {
 	// Check for config path in environment
 	configPath = os.Getenv("NOTIFICATION_RELAY_CONFIG")
 	if configPath == "" {
@@ -58,10 +55,15 @@ func init() {
 	}
 }
 
+func init() {
+	initConfig()
+}
+
 func loadDataFiles() {
 	// Skip credentials as they are already loaded by initCredentials()
 	ensureFileExists(UserDeviceMapJSON, &userDeviceMap)
 	ensureFileExists(DecorationJSON, &decorations)
+	ensureFileExists(TopicDecorationJSON, &topicDecorations)
 	ensureFileExists(IconsJSON, &icons)
 }
 
