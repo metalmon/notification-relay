@@ -32,25 +32,25 @@ func TestGenerateSecureToken(t *testing.T) {
 		},
 	}
 
-	// Регулярное выражение для проверки допустимых символов
+	// Regular expression to check valid characters
 	validChars := regexp.MustCompile(`^[a-zA-Z0-9]+$`)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Генерируем токен
+			// Generate token
 			token := generateSecureToken(tt.length)
 
-			// Проверяем длину
+			// Check length
 			if len(token) != tt.length {
 				t.Errorf("generateSecureToken() length = %v, want %v", len(token), tt.length)
 			}
 
-			// Проверяем, что токен содержит только допустимые символы
+			// Check that token contains only valid characters
 			if !validChars.MatchString(token) {
 				t.Errorf("generateSecureToken() contains invalid characters: %v", token)
 			}
 
-			// Проверяем уникальность - генерируем второй токен и сравниваем
+			// Check uniqueness - generate second token and compare
 			token2 := generateSecureToken(tt.length)
 			if token == token2 {
 				t.Error("generateSecureToken() generated identical tokens")
@@ -60,17 +60,19 @@ func TestGenerateSecureToken(t *testing.T) {
 }
 
 func TestGetCredential(t *testing.T) {
-	// Переключаем Gin в тестовый режим
+	// Switch Gin to test mode
 	gin.SetMode(gin.TestMode)
 
-	// Инициализируем credentials map
+	// Initialize credentials map
 	credentials = make(Credentials)
 
-	// Создаем тестовый HTTP сервер для эмуляции webhook
+	// Create a test HTTP server to emulate webhook
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/valid-webhook" {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("valid-token"))
+			if _, err := w.Write([]byte("valid-token")); err != nil {
+				t.Errorf("Failed to write response: %v", err)
+			}
 			return
 		}
 		w.WriteHeader(http.StatusBadRequest)
@@ -87,7 +89,7 @@ func TestGetCredential(t *testing.T) {
 		{
 			name: "Valid request",
 			request: CredentialRequest{
-				Endpoint:     testServer.URL[7:], // удаляем "http://"
+				Endpoint:     testServer.URL[7:], // Remove "http://"
 				Protocol:     "http",
 				Token:        "valid-token",
 				WebhookRoute: "/valid-webhook",
@@ -133,15 +135,15 @@ func TestGetCredential(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Создаем новый тестовый контекст Gin для каждого теста
+			// Create new Gin test context for each test
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)
 
-			// Подготавливаем JSON запрос
+			// Prepare JSON request
 			jsonData, err := json.Marshal(tt.request)
 			assert.NoError(t, err)
 
-			// Создаем новый запрос с JSON данными
+			// Create new request with JSON data
 			c.Request, err = http.NewRequest(
 				http.MethodPost,
 				"/api/method/notification_relay.api.auth.get_credential",
@@ -150,26 +152,26 @@ func TestGetCredential(t *testing.T) {
 			assert.NoError(t, err)
 			c.Request.Header.Set("Content-Type", "application/json")
 
-			// Вызываем тестируемую функцию
+			// Call the tested function
 			getCredential(c)
 
-			// Проверяем статус ответа
+			// Check response status
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
-			// Разбираем ответ
+			// Parse response
 			var response CredentialResponse
 			err = json.Unmarshal(w.Body.Bytes(), &response)
 			assert.NoError(t, err)
 
-			// Проверяем успешность операции
+			// Check operation success
 			assert.Equal(t, tt.wantSuccess, response.Success)
 
-			// Если ожидается сообщение об ошибке, проверяем его
+			// If error message is expected, check it
 			if tt.wantMessage != "" {
 				assert.Equal(t, tt.wantMessage, response.Message)
 			}
 
-			// Для успешного запроса проверяем наличие учетных данных
+			// For successful request, check presence of credentials
 			if tt.wantSuccess {
 				assert.NotNil(t, response.Credentials)
 				assert.NotEmpty(t, response.Credentials.APIKey)
@@ -180,10 +182,10 @@ func TestGetCredential(t *testing.T) {
 }
 
 func TestAPIBasicAuth(t *testing.T) {
-	// Переключаем Gin в тестовый режим
+	// Switch Gin to test mode
 	gin.SetMode(gin.TestMode)
 
-	// Инициализируем тестовые учетные данные
+	// Initialize test credentials
 	credentials = make(Credentials)
 	credentials["test-key"] = "test-secret"
 
@@ -192,7 +194,7 @@ func TestAPIBasicAuth(t *testing.T) {
 		apiKey          string
 		apiSecret       string
 		expectedStatus  int
-		checkAuthHeader bool // Добавляем флаг для проверки заголовка
+		checkAuthHeader bool // Add flag for checking header
 	}{
 		{
 			name:            "Valid credentials",
@@ -220,37 +222,37 @@ func TestAPIBasicAuth(t *testing.T) {
 			apiKey:          "",
 			apiSecret:       "",
 			expectedStatus:  401,
-			checkAuthHeader: true, // Проверяем заголовок только для отсутствующих credentials
+			checkAuthHeader: true, // Check header only for missing credentials
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Создаем тестовый роутер
+			// Create test router
 			router := gin.New()
 
-			// Добавляем middleware и тестовый обработчик
+			// Add middleware and test handler
 			router.Use(apiBasicAuth())
 			router.GET("/test", func(c *gin.Context) {
 				c.Status(http.StatusOK)
 			})
 
-			// Создаем тестовый запрос
+			// Create test request
 			w := httptest.NewRecorder()
-			req, _ := http.NewRequest("GET", "/test", nil)
+			req, _ := http.NewRequest("GET", "/test", http.NoBody)
 
-			// Добавляем Basic Auth заголовок, если есть учетные данные
+			// Add Basic Auth header if there are credentials
 			if tt.apiKey != "" || tt.apiSecret != "" {
 				req.SetBasicAuth(tt.apiKey, tt.apiSecret)
 			}
 
-			// Выполняем запрос
+			// Perform request
 			router.ServeHTTP(w, req)
 
-			// Проверяем статус ответа
+			// Check response status
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
-			// Проверяем заголовк WWW-Authenticate тол��ко если это необходимо
+			// Check WWW-Authenticate header only if necessary
 			if tt.checkAuthHeader {
 				assert.Contains(t, w.Header().Get("WWW-Authenticate"), "Basic realm=")
 			}
@@ -304,7 +306,7 @@ func TestValidateNotificationParams(t *testing.T) {
 }
 
 func TestAddIconToConfig(t *testing.T) {
-	// Инициализируем тестовые иконки
+	// Initialize test icons
 	icons = make(map[string]string)
 	testKey := "test-project_test-site"
 	icons[testKey] = "/path/to/icon.png"
@@ -344,12 +346,12 @@ func TestAddIconToConfig(t *testing.T) {
 			addIconToConfig(tt.key, tt.config)
 
 			if tt.want == "" {
-				// Для проекта без иконки проверяем, что иконка не добавлена
+				// For project without icon, check that icon is not added
 				if tt.config.Data != nil {
 					assert.Empty(t, tt.config.Data["icon"])
 				}
 			} else {
-				// Для проекта с иконкой проверяем, что она добавлена корректно
+				// For project with icon, check that it is added correctly
 				assert.NotNil(t, tt.config.Data)
 				assert.Equal(t, tt.want, tt.config.Data["icon"])
 			}

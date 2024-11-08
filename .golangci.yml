@@ -1,21 +1,21 @@
 linters:
   enable:
-    - gosec        # Проверяет безопасность кода
-    - govet        # Стандартный линтер Go
-    - errcheck     # Проверяет обработку ошибок
-    - staticcheck  # Продвинутый статический анализатор
-    - gosimple     # Упрощение кода
-    - ineffassign  # Проверяет неиспользуемые присваивания
-    - unused       # Проверяет неиспользуемый код
-    - gocyclo      # Проверяет цикломатическую сложность
-    - misspell     # Проверяет опечатки в комментариях
-    - bodyclose    # Проверяет закрытие HTTP response body
-    - gocritic     # Дополнительные проверки стиля и возможных ошибок
-    - revive       # Замена golint с дополнительными правилами
-    - prealloc     # Предлагает предварительное выделение slice
-    - unconvert    # Находит ненужные преобразования типов
-    - gofmt        # Проверяет форматирование
-    - goimports    # Проверяет импорты
+    - gosec        # Checks code security
+    - govet        # Standard Go linter
+    - errcheck     # Checks error handling
+    - staticcheck  # Advanced static analyzer
+    - gosimple     # Code simplification
+    - ineffassign  # Checks unused assignments
+    - unused       # Checks unused code
+    - gocyclo      # Checks cyclomatic complexity
+    - misspell     # Checks spelling in comments
+    - bodyclose    # Checks HTTP response body closure
+    - gocritic     # Additional style checks and possible errors
+    - revive       # Golint replacement with additional rules
+    - prealloc     # Suggests slice preallocation
+    - unconvert    # Finds unnecessary type conversions
+    - gofmt        # Checks formatting
+    - goimports    # Checks imports
 
 run:
   deadline: 5m

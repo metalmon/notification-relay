@@ -61,7 +61,11 @@ func TestLoadJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Errorf("Failed to clean up temp dir: %v", err)
+		}
+	}()
 
 	// Save original configPath
 	originalConfigPath := configPath
@@ -75,7 +79,7 @@ func TestLoadJSON(t *testing.T) {
 	testData := map[string]string{"test": "value"}
 	testFile := filepath.Join(tmpDir, CredentialsJSON)
 	data, _ := json.Marshal(testData)
-	if err := os.WriteFile(testFile, data, 0600); err != nil {
+	if err := os.WriteFile(testFile, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -95,7 +99,11 @@ func TestSaveJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Errorf("Failed to clean up temp dir: %v", err)
+		}
+	}()
 
 	// Save original configPath
 	originalConfigPath := configPath

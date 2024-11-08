@@ -69,7 +69,7 @@ func TestAddToken(t *testing.T) {
 			c, _ := gin.CreateTestContext(w)
 
 			// Устанавливаем query параметры
-			c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
+			c.Request, _ = http.NewRequest(http.MethodPost, "/test", http.NoBody)
 			q := c.Request.URL.Query()
 			q.Add("project_name", tt.projectName)
 			q.Add("site_name", tt.siteName)
@@ -159,7 +159,7 @@ func TestRemoveToken(t *testing.T) {
 			c, _ := gin.CreateTestContext(w)
 
 			// Устанавливаем query параметры
-			c.Request, _ = http.NewRequest(http.MethodPost, "/test", nil)
+			c.Request, _ = http.NewRequest(http.MethodPost, "/test", http.NoBody)
 			q := c.Request.URL.Query()
 			q.Add("project_name", tt.projectName)
 			q.Add("site_name", tt.siteName)
