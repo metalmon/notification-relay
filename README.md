@@ -3,7 +3,75 @@ This repo provides a push notification relay server for Frappe Apps such as Rave
 
 ## Installation
 
-### Option 1: Easy Installation Script
+### Option 1: Docker Compose (Recommended)
+1. Create required files and directories:
+```bash
+# Create configuration and log directories
+mkdir -p ~/.notification-relay/logs
+chmod 750 ~/.notification-relay
+chmod 750 ~/.notification-relay/logs
+
+# Modify the .env file if you want to change the default values
+
+
+
+
+# Create config.json
+cat > ~/.notification-relay/config.json << EOL
+{
+    "vapid_public_key": "your_vapid_public_key",
+    "firebase_config": {
+        "apiKey": "your-firebase-api-key",
+        "authDomain": "your-project.firebaseapp.com",
+        "projectId": "your-project-id",
+        "storageBucket": "your-project.appspot.com",
+        "messagingSenderId": "your-sender-id",
+        "appId": "your-app-id",
+        "measurementId": "your-measurement-id"
+    }
+}
+EOL
+
+# Create other configuration files
+touch ~/.notification-relay/credentials.json
+touch ~/.notification-relay/user-device-map.json
+touch ~/.notification-relay/decoration.json
+touch ~/.notification-relay/icons.json
+
+# Set proper permissions
+chmod 600 ~/.notification-relay/*.json
+```
+
+2. Start the service:
+```bash
+# Build and start
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Rebuild after code changes
+docker-compose up -d --build
+
+# Stop service
+docker-compose down
+```
+
+### Option 2: Docker Build
+```bash
+# Build the image
+docker build -t notification-relay .
+
+# Run the container
+docker run -d \
+  -p 5000:5000 \
+  -v ~/.notification-relay:/etc/notification-relay \
+  -v ~/.notification-relay/logs:/var/log/notification-relay \
+  --user $(id -u):$(id -g) \
+  notification-relay
+```
+
+### Option 3: Easy Installation Script
 Run the following command to automatically download and install everything:
 ```bash
 curl -sSL https://raw.githubusercontent.com/metalmon/notification-relay/main/install.sh | sudo bash
@@ -15,107 +83,6 @@ After installation:
 3. Start the service:
 ```bash
 sudo systemctl start notification-relay
-```
-
-### Option 2: Quick Installation (Pre-compiled Binary)
-1. Download the latest release:
-```bash
-wget https://github.com/metalmon/notification-relay/releases/latest/download/notification-relay-linux-amd64.tar.gz
-```
-
-2. Extract the binary:
-```bash
-tar xzf notification-relay-linux-amd64.tar.gz
-sudo mv notification-relay-linux-amd64 /usr/local/bin/notification-relay
-sudo chmod +x /usr/local/bin/notification-relay
-```
-
-### Option 3: Build from Source
-If you prefer to compile the binary yourself:
-
-1. Install Go (version 1.21 or higher)
-2. Clone this repository:
-```bash
-git clone https://github.com/metalmon/notification-relay.git
-cd notification-relay
-```
-
-3. Install dependencies and build:
-```bash
-go mod download
-go build -o notification-relay
-```
-
-4. Install the binary:
-```bash
-sudo mv notification-relay /usr/local/bin/
-sudo chmod +x /usr/local/bin/notification-relay
-```
-
-### Common Setup Steps
-After installing the binary (either pre-compiled or self-built):
-
-1. Create configuration directory:
-```bash
-sudo mkdir -p /etc/notification-relay
-```
-
-2. Create config.json (see Configuration section below)
-```bash
-sudo nano /etc/notification-relay/config.json
-```
-
-3. Set up systemd service:
-```bash
-sudo nano /etc/systemd/system/notification-relay.service
-```
-
-Add the following content (replace USER with your username):
-```ini
-[Unit]
-Description=Frappe Push Notification Relay Server
-After=network.target
-
-[Service]
-User=${USER}
-Group=${USER}
-WorkingDirectory=/etc/notification-relay
-Environment="GOOGLE_APPLICATION_CREDENTIALS=/etc/notification-relay/service-account.json"
-ExecStart=/usr/local/bin/notification-relay
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Or use this command to automatically create the service with your current user:
-```bash
-sudo bash -c 'cat > /etc/systemd/system/notification-relay.service << EOL
-[Unit]
-Description=Frappe Push Notification Relay Server
-After=network.target
-
-[Service]
-User='$USER'
-Group='$USER'
-WorkingDirectory=/etc/notification-relay
-Environment="GOOGLE_APPLICATION_CREDENTIALS=/etc/notification-relay/service-account.json"
-ExecStart=/usr/local/bin/notification-relay
-
-[Install]
-WantedBy=multi-user.target
-EOL'
-```
-
-4. Start the service:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable notification-relay
-sudo systemctl start notification-relay
-```
-
-5. Check status:
-```bash
-sudo systemctl status notification-relay
 ```
 
 ## Configuration
@@ -169,69 +136,7 @@ All endpoints (except authentication) require Basic Authentication using the con
 ## ERPNext Integration
 Add the `API_SECRET` & `API_KEY` in ERPNext Push Notification settings and enable the Push Notification Relay option.
 
-## Docker Usage
-
-### Quick Start with Docker Compose
-
-1. Create required files and directories:
-```bash
-# Create configuration and log directories
-mkdir -p ~/.notification-relay/logs
-chmod 750 ~/.notification-relay
-chmod 750 ~/.notification-relay/logs
-
-# Create .env file
-cat > .env << EOL
-# Server configuration
-PORT=5000
-CONFIG_DIR=~/.notification-relay
-LOG_DIR=~/.notification-relay/logs
-
-# User configuration (for file permissions)
-UID=$(id -u)
-GID=$(id -g)
-EOL
-
-# Create config.json
-cat > ~/.notification-relay/config.json << EOL
-{
-    "vapid_public_key": "your_vapid_public_key",
-    "firebase_config": {
-        "apiKey": "your-firebase-api-key",
-        "authDomain": "your-project.firebaseapp.com",
-        "projectId": "your-project-id",
-        "storageBucket": "your-project.appspot.com",
-        "messagingSenderId": "your-sender-id",
-        "appId": "your-app-id",
-        "measurementId": "your-measurement-id"
-    }
-}
-EOL
-
-# Create other configuration files
-touch ~/.notification-relay/credentials.json
-touch ~/.notification-relay/user-device-map.json
-touch ~/.notification-relay/decoration.json
-touch ~/.notification-relay/icons.json
-
-# Set proper permissions
-chmod 600 ~/.notification-relay/*.json
-```
-
-2. Start the service:
-```bash
-# Build and start
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Rebuild after code changes
-docker-compose up -d --build
-
-# Stop service
-docker-compose down
-```
+## Docker Environment
 
 ### Directory Structure
 ```
@@ -272,10 +177,4 @@ tail -f ~/.notification-relay/logs/notification-relay.log
 tail -n 100 ~/.notification-relay/logs/notification-relay.log
 ```
 
-### Docker Compose Features
-- Builds image locally - no need for Docker Hub
-- Uses host user permissions for files
-- Automatic service restart on failure
-- Easy port configuration
-- Proper volume mounting for configuration files
-- Centralized logging with host directory mounting
+
