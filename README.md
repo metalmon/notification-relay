@@ -70,21 +70,40 @@ sudo nano /etc/notification-relay/config.json
 sudo nano /etc/systemd/system/notification-relay.service
 ```
 
-Add the following content:
+Add the following content (replace USER with your username):
 ```ini
 [Unit]
 Description=Frappe Push Notification Relay Server
 After=network.target
 
 [Service]
-User=frappe
-Group=www-data
+User=${USER}
+Group=${USER}
 WorkingDirectory=/etc/notification-relay
 Environment="GOOGLE_APPLICATION_CREDENTIALS=/etc/notification-relay/service-account.json"
 ExecStart=/usr/local/bin/notification-relay
 
 [Install]
 WantedBy=multi-user.target
+```
+
+Or use this command to automatically create the service with your current user:
+```bash
+sudo bash -c 'cat > /etc/systemd/system/notification-relay.service << EOL
+[Unit]
+Description=Frappe Push Notification Relay Server
+After=network.target
+
+[Service]
+User='$USER'
+Group='$USER'
+WorkingDirectory=/etc/notification-relay
+Environment="GOOGLE_APPLICATION_CREDENTIALS=/etc/notification-relay/service-account.json"
+ExecStart=/usr/local/bin/notification-relay
+
+[Install]
+WantedBy=multi-user.target
+EOL'
 ```
 
 4. Start the service:
