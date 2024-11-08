@@ -32,6 +32,7 @@ jobs:
           echo '{}' > testdata/etc/notification-relay/user-device-map.json
           echo '{}' > testdata/etc/notification-relay/decoration.json
           echo '{}' > testdata/etc/notification-relay/icons.json
+          echo '{"type":"service_account","project_id":"test"}' > testdata/etc/notification-relay/service-account.json
           chmod -R 600 testdata/etc/notification-relay/*.json
           chmod -R 700 testdata/etc/notification-relay
-          make test
+          GOOGLE_APPLICATION_CREDENTIALS="$(pwd)/testdata/etc/notification-relay/service-account.json" make test

@@ -3,13 +3,44 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )
+
+func init() {
+	// Create test service account file
+	testServiceAccount := `{
+		"type": "service_account",
+		"project_id": "test-project",
+		"private_key_id": "test",
+		"private_key": "test",
+		"client_email": "test@test.com",
+		"client_id": "test",
+		"auth_uri": "https://accounts.google.com/o/oauth2/auth",
+		"token_uri": "https://oauth2.googleapis.com/token",
+		"auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+		"client_x509_cert_url": "test"
+	}`
+
+	err := os.MkdirAll("testdata/etc/notification-relay", 0o700)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = os.WriteFile("testdata/etc/notification-relay/service-account.json", []byte(testServiceAccount), 0o600)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Set environment variable for tests
+	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "testdata/etc/notification-relay/service-account.json")
+}
 
 func setupTestRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)

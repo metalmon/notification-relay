@@ -59,17 +59,20 @@ test-setup: ## Setup test environment
 	@echo '{}' > $(TEST_CONFIG_DIR)/etc/notification-relay/user-device-map.json
 	@echo '{}' > $(TEST_CONFIG_DIR)/etc/notification-relay/decoration.json
 	@echo '{}' > $(TEST_CONFIG_DIR)/etc/notification-relay/icons.json
+	@echo '{"type":"service_account","project_id":"test"}' > $(TEST_CONFIG_DIR)/etc/notification-relay/service-account.json
 	@chmod -R 600 $(TEST_CONFIG_DIR)/etc/notification-relay/*.json
 	@chmod -R 700 $(TEST_CONFIG_DIR)/etc/notification-relay
 
 test: dep test-setup ## Run tests without race detector
 	NOTIFICATION_RELAY_CONFIG="$(shell pwd)/testdata/etc/notification-relay/config.json" \
+	GOOGLE_APPLICATION_CREDENTIALS="$(shell pwd)/testdata/etc/notification-relay/service-account.json" \
 	go test -p 1 -timeout 300s -coverprofile=.test_coverage.txt ./... && \
 		go tool cover -func=.test_coverage.txt | tail -n1 | awk '{print "Total test coverage: " $$3}'
 	@rm -f .test_coverage.txt
 
 test-race: dep test-setup ## Run tests with race detector
 	NOTIFICATION_RELAY_CONFIG="$(shell pwd)/testdata/etc/notification-relay/config.json" \
+	GOOGLE_APPLICATION_CREDENTIALS="$(shell pwd)/testdata/etc/notification-relay/service-account.json" \
 	CGO_ENABLED=1 go test -race -p 1 -timeout 300s ./...
 
 docker-build: ## Build docker image
