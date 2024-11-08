@@ -10,6 +10,7 @@ services:
     environment:
       - LISTEN_PORT=${PORT:-5000}
       - GIN_MODE=release
+      - GOOGLE_APPLICATION_CREDENTIALS=/etc/notification-relay/service-account.json
     volumes:
       - ${CONFIG_DIR:-~/.notification-relay}:/etc/notification-relay
       - ${LOG_DIR:-~/.notification-relay/logs}:/var/log/notification-relay

@@ -69,7 +69,7 @@ func ensureFileExists(filename string, defaultValue interface{}) {
 	fullPath := getConfigPath(filename)
 	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 		// Create directory if it doesn't exist
-		if err := os.MkdirAll(filepath.Dir(fullPath), 0700); err != nil {
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o700); err != nil {
 			log.Fatalf("Failed to create directory for %s: %v", filename, err)
 		}
 		// Save default value and check for errors
@@ -86,7 +86,9 @@ func loadJSON(filename string, v interface{}) error {
 		return fmt.Errorf("invalid file extension for %s: must be .json", filename)
 	}
 
-	file, err := os.ReadFile(fullPath)
+	// Use filepath.Clean to sanitize the path
+	cleanPath := filepath.Clean(fullPath)
+	file, err := os.ReadFile(cleanPath) // #nosec G304 -- path is sanitized
 	if err != nil {
 		return err
 	}
@@ -99,5 +101,5 @@ func saveJSON(filename string, v interface{}) error {
 	if err != nil {
 		panic(fmt.Sprintf("Failed to marshal JSON: %v", err))
 	}
-	return os.WriteFile(fullPath, data, 0600)
+	return os.WriteFile(fullPath, data, 0o600)
 }

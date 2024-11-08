@@ -6,6 +6,10 @@
   1. `./config.json`
   2. `/etc/notification-relay/config.json`
 
+- `GOOGLE_APPLICATION_CREDENTIALS`: Path to Firebase service account JSON file. If not set, the server will look in:
+  1. `./service-account.json`
+  2. `/etc/notification-relay/service-account.json`
+
 - `LISTEN_PORT`: Server port number. If not set, defaults to `5000`
 
 ## File Structure

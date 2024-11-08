@@ -45,7 +45,7 @@ lint-deps: ## Install linting dependencies
 	@go install github.com/securego/gosec/v2/cmd/gosec@latest
 
 lint: dep lint-deps ## Lint the source files
-	golangci-lint run --timeout 5m -E golint
+	golangci-lint run --timeout 5m
 	gosec -quiet ./...
 
 check: lint test ## Run all checks

@@ -9,15 +9,16 @@ import (
 	"log"
 	"math/big"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"time"
 
+	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/messaging"
 	"github.com/gin-gonic/gin"
 )
 
+// CredentialRequest represents a request for API credentials
 type CredentialRequest struct {
 	Endpoint     string `json:"endpoint"`
 	Protocol     string `json:"protocol"`
@@ -26,21 +27,25 @@ type CredentialRequest struct {
 	WebhookRoute string `json:"webhook_route"`
 }
 
+// CredentialResponse represents an API credentials response
 type CredentialResponse struct {
 	Success     bool               `json:"success"`
 	Message     string             `json:"message,omitempty"`
 	Credentials *CredentialDetails `json:"credentials,omitempty"`
 }
 
+// CredentialDetails contains generated API credentials
 type CredentialDetails struct {
 	APIKey    string `json:"api_key"`
 	APISecret string `json:"api_secret"`
 }
 
+// Credentials represents a map of API credentials
 type Credentials map[string]string
 
 var (
-	credentials Credentials
+	credentials     Credentials
+	messagingClient *messaging.Client
 )
 
 // Add initialization function that will be called after configPath is set
@@ -49,12 +54,6 @@ func initCredentials() {
 	ensureFileExists(CredentialsJSON, make(Credentials))
 	if err := loadJSON(CredentialsJSON, &credentials); err != nil {
 		log.Fatalf("Failed to load credentials: %v", err)
-	}
-}
-
-func closeBody(body io.ReadCloser) {
-	if err := body.Close(); err != nil {
-		log.Printf("Error closing response body: %v", err)
 	}
 }
 
@@ -99,7 +98,13 @@ func getCredential(c *gin.Context) {
 		})
 		return
 	}
-	defer closeBody(resp.Body)
+	if resp != nil {
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				log.Printf("Error closing response body: %v", err)
+			}
+		}()
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		c.JSON(http.StatusBadRequest, CredentialResponse{
@@ -285,16 +290,18 @@ func addToken(c *gin.Context) {
 	}
 
 	if tokens, exists := userDeviceMap[key][userID]; exists {
+		// Check for duplicate token
 		for _, token := range tokens {
-			if token == fcmToken {
-				c.JSON(http.StatusOK, Response{
-					Message: &SuccessResponse{
-						Success: 200,
-						Message: "User Token duplicate found",
-					},
-				})
-				return
+			if token != fcmToken {
+				continue
 			}
+			c.JSON(http.StatusOK, Response{
+				Message: &SuccessResponse{
+					Success: 200,
+					Message: "User Token duplicate found",
+				},
+			})
+			return
 		}
 		userDeviceMap[key][userID] = append(tokens, fcmToken)
 	} else {
@@ -329,29 +336,32 @@ func removeToken(c *gin.Context) {
 
 	if tokens, exists := userDeviceMap[key][userID]; exists {
 		for i, token := range tokens {
-			if token == fcmToken {
-				userDeviceMap[key][userID] = append(tokens[:i], tokens[i+1:]...)
-				err := saveJSON(UserDeviceMapJSON, userDeviceMap)
-				if err != nil {
-					c.JSON(http.StatusInternalServerError, Response{
-						Error: &ErrorResponse{
-							StatusCode: http.StatusInternalServerError,
-							Message:    "Failed to save user device map",
-						},
-					})
-					return
-				}
-				c.JSON(http.StatusOK, Response{
-					Message: &SuccessResponse{
-						Success: 200,
-						Message: "User Token removed",
+			if token != fcmToken {
+				continue
+			}
+			// Нашли токен, удаляем его
+			userDeviceMap[key][userID] = append(tokens[:i], tokens[i+1:]...)
+			err := saveJSON(UserDeviceMapJSON, userDeviceMap)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, Response{
+					Error: &ErrorResponse{
+						StatusCode: http.StatusInternalServerError,
+						Message:    "Failed to save user device map",
 					},
 				})
 				return
 			}
+			c.JSON(http.StatusOK, Response{
+				Message: &SuccessResponse{
+					Success: 200,
+					Message: "User Token removed",
+				},
+			})
+			return
 		}
 	}
 
+	// Если токен не найден, все равно возвращаем успешный результат
 	c.JSON(http.StatusOK, Response{
 		Message: &SuccessResponse{
 			Success: 200,
@@ -360,7 +370,75 @@ func removeToken(c *gin.Context) {
 	})
 }
 
+// validateNotificationParams checks the required parameters for a notification
+func validateNotificationParams(title, body string) error {
+	if title == "" {
+		return fmt.Errorf("title is required")
+	}
+	if body == "" {
+		return fmt.Errorf("body is required")
+	}
+	return nil
+}
+
+// getUserTokens retrieves the user's tokens
+func getUserTokens(key, userID string) ([]string, error) {
+	tokens, exists := userDeviceMap[key][userID]
+	if !exists || len(tokens) == 0 {
+		return nil, fmt.Errorf("user %s not subscribed to push notifications", userID)
+	}
+	return tokens, nil
+}
+
+// prepareNotification prepares a notification with decorations
+func prepareNotification(key, title, body, data string) (*messaging.Message, error) {
+	// Apply decorations to the title if they exist
+	if projectDecorations, exists := decorations[key]; exists {
+		for _, decoration := range projectDecorations {
+			if matched, _ := regexp.MatchString(decoration.Pattern, title); matched {
+				title = strings.Replace(decoration.Template, "{title}", title, 1)
+				break
+			}
+		}
+	}
+
+	// Prepare notification data
+	notification := &messaging.Message{
+		Notification: &messaging.Notification{
+			Title: title,
+			Body:  body,
+		},
+	}
+
+	// Add additional data if it exists
+	if data != "" {
+		notification.Data = map[string]string{"data": data}
+	}
+
+	// Add project icon if it exists
+	if iconPath, exists := icons[key]; exists {
+		if notification.Data == nil {
+			notification.Data = make(map[string]string)
+		}
+		notification.Data["icon"] = iconPath
+	}
+
+	return notification, nil
+}
+
+// initMessaging initializes the Firebase Messaging client
+func initMessaging(app *firebase.App) error {
+	var err error
+	ctx := context.Background()
+	messagingClient, err = app.Messaging(ctx)
+	if err != nil {
+		return fmt.Errorf("error getting Messaging client: %v", err)
+	}
+	return nil
+}
+
 func sendNotificationToUser(c *gin.Context) {
+	// Get request parameters
 	projectName := c.Query("project_name")
 	siteName := c.Query("site_name")
 	key := projectName + "_" + siteName
@@ -369,111 +447,54 @@ func sendNotificationToUser(c *gin.Context) {
 	body := c.Query("body")
 	data := c.Query("data")
 
-	var dataMap map[string]interface{}
-	if err := json.Unmarshal([]byte(data), &dataMap); err != nil {
+	// Check required parameters
+	if err := validateNotificationParams(title, body); err != nil {
 		c.JSON(http.StatusBadRequest, Response{
 			Error: &ErrorResponse{
 				StatusCode: http.StatusBadRequest,
-				Message:    "Invalid data format",
+				Message:    err.Error(),
 			},
 		})
 		return
 	}
 
-	notificationIcon, _ := dataMap["notification_icon"].(string)
-	if notificationIcon == "" {
-		if icon, exists := icons[key]; exists {
-			if _, err := os.Stat(icon); err == nil {
-				notificationIcon = icon
-			}
-		}
-	}
-
-	// Check title against decoration patterns if project exists
-	if projectDecorations, exists := decorations[key]; exists {
-		for _, config := range projectDecorations {
-			matched, err := regexp.MatchString(config.Pattern, title)
-			if err == nil && matched {
-				title = strings.Replace(config.Template, "{title}", title, 1)
-				break
-			}
-		}
-	}
-
-	if tokens, exists := userDeviceMap[key][userID]; exists && len(tokens) > 0 {
-		ctx := context.Background()
-		client, err := fbApp.Messaging(ctx)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, Response{
-				Error: &ErrorResponse{
-					StatusCode: http.StatusInternalServerError,
-					Message:    "Failed to initialize messaging client",
-				},
-			})
-			return
-		}
-
-		webpushConfig := &messaging.WebpushConfig{
-			Notification: &messaging.WebpushNotification{
-				Title: title,
-				Body:  body,
-				Icon:  notificationIcon,
-			},
-		}
-
-		// Add click_action only if it exists
-		if clickAction, ok := dataMap["click_action"].(string); ok {
-			webpushConfig.FCMOptions = &messaging.WebpushFCMOptions{
-				Link: clickAction,
-			}
-		}
-
-		message := &messaging.MulticastMessage{
-			Webpush: webpushConfig,
-			Tokens:  tokens,
-		}
-
-		response, err := client.SendEachForMulticast(ctx, message)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, Response{
-				Error: &ErrorResponse{
-					StatusCode: http.StatusInternalServerError,
-					Message:    "Failed to send notification",
-				},
-			})
-			return
-		}
-
-		// Handle failures and update user-device map
-		if response.FailureCount > 0 {
-			var validTokens []string
-			for i, resp := range response.Responses {
-				if resp.Success {
-					validTokens = append(validTokens, tokens[i])
-				}
-			}
-			// Update with only valid tokens
-			userDeviceMap[key][userID] = validTokens
-
-			// Save updated map
-			if err := saveJSON(UserDeviceMapJSON, userDeviceMap); err != nil {
-				log.Printf("Failed to save updated user device map: %v", err)
-			}
-		}
-
-		c.JSON(http.StatusOK, Response{
-			Message: &SuccessResponse{
-				Success: 200,
-				Message: fmt.Sprintf("%d Notification sent to %s user", response.SuccessCount, userID),
+	// Get user's tokens
+	tokens, err := getUserTokens(key, userID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, Response{
+			Error: &ErrorResponse{
+				StatusCode: http.StatusBadRequest,
+				Message:    err.Error(),
 			},
 		})
 		return
 	}
 
-	c.JSON(http.StatusBadRequest, Response{
-		Error: &ErrorResponse{
-			StatusCode: http.StatusBadRequest,
-			Message:    userID + " not subscribed to push notifications",
+	// Prepare notification
+	notification, err := prepareNotification(key, title, body, data)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, Response{
+			Error: &ErrorResponse{
+				StatusCode: http.StatusInternalServerError,
+				Message:    "Failed to prepare notification",
+			},
+		})
+		return
+	}
+
+	// Send notification to all user tokens
+	for _, token := range tokens {
+		notification.Token = token
+		_, err := messagingClient.Send(context.Background(), notification)
+		if err != nil {
+			log.Printf("Failed to send notification to token %s: %v", token, err)
+		}
+	}
+
+	c.JSON(http.StatusOK, Response{
+		Message: &SuccessResponse{
+			Success: 200,
+			Message: "Notification sent",
 		},
 	})
 }
@@ -557,3 +578,46 @@ func sendNotificationToTopic(c *gin.Context) {
 }
 
 // Continue with other handlers...
+
+// Response represents the standard API response structure
+type Response struct {
+	Message *SuccessResponse `json:"message,omitempty"`
+	Error   *ErrorResponse   `json:"error,omitempty"`
+}
+
+// SuccessResponse represents a successful API response message
+type SuccessResponse struct {
+	Success int    `json:"success"`
+	Message string `json:"message"`
+}
+
+// ErrorResponse represents an error API response message
+type ErrorResponse struct {
+	StatusCode int    `json:"status_code"`
+	Message    string `json:"message"`
+}
+
+// Decoration represents a notification title decoration rule
+type Decoration struct {
+	Pattern  string `json:"pattern"`
+	Template string `json:"template"`
+}
+
+// Добавим функцию apiBasicAuth
+func apiBasicAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		apiKey, apiSecret, hasAuth := c.Request.BasicAuth()
+		if !hasAuth {
+			c.Header("WWW-Authenticate", "Basic realm=Authorization Required")
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
+		if storedSecret, exists := credentials[apiKey]; !exists || storedSecret != apiSecret {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
+		c.Next()
+	}
+}

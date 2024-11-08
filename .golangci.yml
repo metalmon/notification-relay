@@ -1,13 +1,21 @@
 linters:
   enable:
-    - golint
-    - gosec
-    - govet
-    - errcheck
-    - staticcheck
-    - gosimple
-    - ineffassign
-    - unused
+    - gosec        # Проверяет безопасность кода
+    - govet        # Стандартный линтер Go
+    - errcheck     # Проверяет обработку ошибок
+    - staticcheck  # Продвинутый статический анализатор
+    - gosimple     # Упрощение кода
+    - ineffassign  # Проверяет неиспользуемые присваивания
+    - unused       # Проверяет неиспользуемый код
+    - gocyclo      # Проверяет цикломатическую сложность
+    - misspell     # Проверяет опечатки в комментариях
+    - bodyclose    # Проверяет закрытие HTTP response body
+    - gocritic     # Дополнительные проверки стиля и возможных ошибок
+    - revive       # Замена golint с дополнительными правилами
+    - prealloc     # Предлагает предварительное выделение slice
+    - unconvert    # Находит ненужные преобразования типов
+    - gofmt        # Проверяет форматирование
+    - goimports    # Проверяет импорты
 
 run:
   deadline: 5m
@@ -18,8 +26,17 @@ issues:
   max-same-issues: 0
 
 linters-settings:
-  golint:
-    min-confidence: 0.8
-  gosec:
-    excludes:
-      - G104 # Audit errors not checked 
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+  
+  gocyclo:
+    min-complexity: 15
+
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+        disabled: false

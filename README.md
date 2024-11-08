@@ -85,6 +85,14 @@ sudo systemctl start notification-relay
 ## Configuration
 The server uses the following configuration files:
 
+### Service Account
+Firebase service account JSON file can be configured in several ways:
+1. Via environment variable: `GOOGLE_APPLICATION_CREDENTIALS`
+2. Default locations (checked in order):
+   - `./service-account.json`
+   - `/etc/notification-relay/service-account.json`
+
+### Other Configuration Files
 - `config.json`: Main configuration file containing VAPID key and Firebase config
 - `credentials.json`: Stores API keys and secrets for authenticated sites
 - `user-device-map.json`: Maps users to their device tokens
