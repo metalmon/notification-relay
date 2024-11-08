@@ -59,10 +59,10 @@ var (
 	fbApp         *firebase.App
 	config        Config
 
-	// Version information - these will be set by ldflags during build
-	Version   = "dev"     // Will be set to github.ref_name
-	BuildTime = "unknown" // Will be set to github.event.repository.updated_at
-	GitCommit = "unknown" // Will be set to github.sha
+	// Version information - these will be set during build by ldflags
+	gitTag    = "unknown"
+	gitCommit = "unknown"
+	gitBranch = "unknown"
 )
 
 func apiBasicAuth() gin.HandlerFunc {
@@ -84,7 +84,11 @@ func apiBasicAuth() gin.HandlerFunc {
 	}
 }
 
-func init() {
+// InitializeApp initializes the application with the given config path
+func InitializeApp() {
+	// Log version information at startup
+	log.Printf("Version: %s, Commit: %s, Branch: %s", gitTag, gitCommit, gitBranch)
+
 	// Load configurations
 	var err error
 	configBytes, err := os.ReadFile(getConfigPath(ConfigJSON))
@@ -109,13 +113,16 @@ func init() {
 	}
 	fbApp = app
 
-	// Load data files
+	// Load all data files
 	loadDataFiles()
+
+	// Initialize credentials last
+	initCredentials()
 }
 
 func main() {
 	// Log version information
-	log.Printf("Version: %s, Build Time: %s, Git Commit: %s", Version, BuildTime, GitCommit)
+	log.Printf("Version: %s, Commit: %s, Branch: %s", gitTag, gitCommit, gitBranch)
 
 	r := gin.Default()
 
@@ -137,5 +144,8 @@ func main() {
 		port = "5000"
 	}
 
-	r.Run(":" + port)
+	// Run the server and handle potential errors
+	if err := r.Run(":" + port); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }

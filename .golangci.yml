@@ -1,0 +1,25 @@
+linters:
+  enable:
+    - golint
+    - gosec
+    - govet
+    - errcheck
+    - staticcheck
+    - gosimple
+    - ineffassign
+    - unused
+
+run:
+  deadline: 5m
+
+issues:
+  exclude-use-default: false
+  max-per-linter: 0
+  max-same-issues: 0
+
+linters-settings:
+  golint:
+    min-confidence: 0.8
+  gosec:
+    excludes:
+      - G104 # Audit errors not checked 

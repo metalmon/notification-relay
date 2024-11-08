@@ -31,8 +31,10 @@ jobs:
       evaluated-envs: |
         {
           "VERSION": "${{ github.ref_name }}",
-          "BUILD_TIME": "${{ github.event.repository.updated_at }}",
-          "GIT_COMMIT": "${{ github.sha }}"
+          "BUILD_TIME": "${{ github.event.release.created_at }}",
+          "GIT_COMMIT": "${{ github.sha }}",
+          "GIT_BRANCH": "${{ github.ref_name }}",
+          "GIT_TAG": "${{ github.ref_name }}"
         }
       config-file: '.slsa-goreleaser.yml'
       upload-assets: true

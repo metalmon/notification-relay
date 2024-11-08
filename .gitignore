@@ -1,6 +1,7 @@
 env/
 .vscode/
 log/
+bin/
 __pycache__
 .context/
 erpsgs-frappe-firebase-adminsdk-cred.json
@@ -18,3 +19,5 @@ service-account.json
 
 # Binary files
 notification-relay
+bin/
+dist/

@@ -1,0 +1,15 @@
+version: '3'
+services:
+  notification-relay:
+    build:
+      context: .
+      args:
+        USER_ID: ${UID:-1000}
+        GROUP_ID: ${GID:-1000}
+    ports:
+      - "${PORT:-5000}:${PORT:-5000}"
+    environment:
+      - LISTEN_PORT=${PORT:-5000}
+    volumes:
+      - ${CONFIG_DIR:-~/.notification-relay}:/etc/notification-relay
+    restart: unless-stopped 

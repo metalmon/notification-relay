@@ -43,10 +43,19 @@ var (
 	credentials Credentials
 )
 
-func init() {
+// Add initialization function that will be called after configPath is set
+func initCredentials() {
 	// Load credentials from file
 	ensureFileExists(CredentialsJSON, make(Credentials))
-	loadJSON(CredentialsJSON, &credentials)
+	if err := loadJSON(CredentialsJSON, &credentials); err != nil {
+		log.Fatalf("Failed to load credentials: %v", err)
+	}
+}
+
+func closeBody(body io.ReadCloser) {
+	if err := body.Close(); err != nil {
+		log.Printf("Error closing response body: %v", err)
+	}
 }
 
 func getCredential(c *gin.Context) {
@@ -90,7 +99,7 @@ func getCredential(c *gin.Context) {
 		})
 		return
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		c.JSON(http.StatusBadRequest, CredentialResponse{
@@ -185,19 +194,31 @@ func subscribeToTopic(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusBadRequest, Response{
+	c.JSON(http.StatusNotFound, Response{
 		Error: &ErrorResponse{
-			StatusCode: 404,
+			StatusCode: http.StatusNotFound,
 			Message:    userID + " not subscribed to push notifications",
 		},
 	})
 }
+
 func unsubscribeFromTopic(c *gin.Context) {
 	projectName := c.Query("project_name")
 	siteName := c.Query("site_name")
 	key := projectName + "_" + siteName
 	userID := c.Query("user_id")
 	topicName := c.Query("topic_name")
+
+	// Check if topic name is empty
+	if topicName == "" {
+		c.JSON(http.StatusBadRequest, Response{
+			Error: &ErrorResponse{
+				StatusCode: http.StatusBadRequest,
+				Message:    "topic_name is required",
+			},
+		})
+		return
+	}
 
 	if tokens, exists := userDeviceMap[key][userID]; exists && len(tokens) > 0 {
 		ctx := context.Background()
@@ -232,9 +253,10 @@ func unsubscribeFromTopic(c *gin.Context) {
 		return
 	}
 
+	// Changed to match HTTP status with error status code
 	c.JSON(http.StatusBadRequest, Response{
 		Error: &ErrorResponse{
-			StatusCode: 404,
+			StatusCode: http.StatusBadRequest,
 			Message:    userID + " not subscribed to push notifications",
 		},
 	})
@@ -246,6 +268,17 @@ func addToken(c *gin.Context) {
 	key := projectName + "_" + siteName
 	userID := c.Query("user_id")
 	fcmToken := c.Query("fcm_token")
+
+	// Check if token is empty
+	if fcmToken == "" {
+		c.JSON(http.StatusBadRequest, Response{
+			Error: &ErrorResponse{
+				StatusCode: http.StatusBadRequest,
+				Message:    "FCM token is required",
+			},
+		})
+		return
+	}
 
 	if userDeviceMap[key] == nil {
 		userDeviceMap[key] = make(map[string][]string)
@@ -380,21 +413,27 @@ func sendNotificationToUser(c *gin.Context) {
 			return
 		}
 
-		message := &messaging.MulticastMessage{
-			Webpush: &messaging.WebpushConfig{
-				Notification: &messaging.WebpushNotification{
-					Title: title,
-					Body:  body,
-					Icon:  notificationIcon,
-				},
-				FCMOptions: &messaging.WebpushFCMOptions{
-					Link: dataMap["click_action"].(string),
-				},
+		webpushConfig := &messaging.WebpushConfig{
+			Notification: &messaging.WebpushNotification{
+				Title: title,
+				Body:  body,
+				Icon:  notificationIcon,
 			},
-			Tokens: tokens,
 		}
 
-		response, err := client.SendMulticast(ctx, message)
+		// Add click_action only if it exists
+		if clickAction, ok := dataMap["click_action"].(string); ok {
+			webpushConfig.FCMOptions = &messaging.WebpushFCMOptions{
+				Link: clickAction,
+			}
+		}
+
+		message := &messaging.MulticastMessage{
+			Webpush: webpushConfig,
+			Tokens:  tokens,
+		}
+
+		response, err := client.SendEachForMulticast(ctx, message)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, Response{
 				Error: &ErrorResponse{
@@ -407,12 +446,15 @@ func sendNotificationToUser(c *gin.Context) {
 
 		// Handle failures and update user-device map
 		if response.FailureCount > 0 {
+			var validTokens []string
 			for i, resp := range response.Responses {
-				if !resp.Success {
-					// Remove failed token
-					userDeviceMap[key][userID] = append(tokens[:i], tokens[i+1:]...)
+				if resp.Success {
+					validTokens = append(validTokens, tokens[i])
 				}
 			}
+			// Update with only valid tokens
+			userDeviceMap[key][userID] = validTokens
+
 			// Save updated map
 			if err := saveJSON(UserDeviceMapJSON, userDeviceMap); err != nil {
 				log.Printf("Failed to save updated user device map: %v", err)
@@ -430,7 +472,7 @@ func sendNotificationToUser(c *gin.Context) {
 
 	c.JSON(http.StatusBadRequest, Response{
 		Error: &ErrorResponse{
-			StatusCode: 404,
+			StatusCode: http.StatusBadRequest,
 			Message:    userID + " not subscribed to push notifications",
 		},
 	})
@@ -442,6 +484,17 @@ func sendNotificationToTopic(c *gin.Context) {
 	body := c.Query("body")
 	data := c.Query("data")
 
+	// Check if topic name is empty
+	if topic == "" {
+		c.JSON(http.StatusBadRequest, Response{
+			Error: &ErrorResponse{
+				StatusCode: http.StatusBadRequest,
+				Message:    "topic_name is required",
+			},
+		})
+		return
+	}
+
 	var dataMap map[string]interface{}
 	if err := json.Unmarshal([]byte(data), &dataMap); err != nil {
 		c.JSON(http.StatusBadRequest, Response{
@@ -451,15 +504,6 @@ func sendNotificationToTopic(c *gin.Context) {
 			},
 		})
 		return
-	}
-
-	notificationIcon, _ := dataMap["notification_icon"].(string)
-	if notificationIcon == "" {
-		if icon, exists := icons[topic]; exists {
-			notificationIcon = icon
-		} else {
-			notificationIcon = "" // Default empty icon if not found
-		}
 	}
 
 	ctx := context.Background()
@@ -474,18 +518,23 @@ func sendNotificationToTopic(c *gin.Context) {
 		return
 	}
 
-	message := &messaging.Message{
-		Webpush: &messaging.WebpushConfig{
-			Notification: &messaging.WebpushNotification{
-				Title: title,
-				Body:  body,
-				Icon:  notificationIcon,
-			},
-			FCMOptions: &messaging.WebpushFCMOptions{
-				Link: dataMap["click_action"].(string),
-			},
+	webpushConfig := &messaging.WebpushConfig{
+		Notification: &messaging.WebpushNotification{
+			Title: title,
+			Body:  body,
 		},
-		Topic: topic,
+	}
+
+	// Add click_action only if it exists
+	if clickAction, ok := dataMap["click_action"].(string); ok {
+		webpushConfig.FCMOptions = &messaging.WebpushFCMOptions{
+			Link: clickAction,
+		}
+	}
+
+	message := &messaging.Message{
+		Topic:   topic,
+		Webpush: webpushConfig,
 	}
 
 	_, err = client.Send(ctx, message)

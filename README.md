@@ -149,3 +149,69 @@ All endpoints (except authentication) require Basic Authentication using the con
 
 ## ERPNext Integration
 Add the `API_SECRET` & `API_KEY` in ERPNext Push Notification settings and enable the Push Notification Relay option.
+
+## Docker Usage
+
+### Quick Start with Docker Compose
+
+1. Create required files and directories:
+```bash
+# Create configuration directory
+mkdir -p ~/.notification-relay
+chmod 750 ~/.notification-relay
+
+# Create config.json
+cat > ~/.notification-relay/config.json << EOL
+{
+    "vapid_public_key": "your_vapid_public_key",
+    "firebase_config": {
+        "apiKey": "your-firebase-api-key",
+        "authDomain": "your-project.firebaseapp.com",
+        "projectId": "your-project-id",
+        "storageBucket": "your-project.appspot.com",
+        "messagingSenderId": "your-sender-id",
+        "appId": "your-app-id",
+        "measurementId": "your-measurement-id"
+    }
+}
+EOL
+
+# Create other configuration files
+touch ~/.notification-relay/credentials.json
+touch ~/.notification-relay/user-device-map.json
+touch ~/.notification-relay/decoration.json
+touch ~/.notification-relay/icons.json
+
+# Set proper permissions
+chmod 600 ~/.notification-relay/*.json
+```
+
+2. Start the service:
+```bash
+# Build and start
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Rebuild after code changes
+docker-compose up -d --build
+
+# Stop service
+docker-compose down
+```
+
+### Environment Variables
+
+The following environment variables can be configured in `.env`:
+- `PORT`: Server port number (default: 5000)
+- `CONFIG_DIR`: Path to configuration directory (default: ~/.notification-relay)
+- `UID`: User ID for file permissions (default: current user's UID)
+- `GID`: Group ID for file permissions (default: current user's GID)
+
+### Docker Compose Features
+- Builds image locally - no need for Docker Hub
+- Uses host user permissions for files
+- Automatic service restart on failure
+- Easy port configuration
+- Proper volume mounting for configuration files
