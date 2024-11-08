@@ -156,9 +156,22 @@ Add the `API_SECRET` & `API_KEY` in ERPNext Push Notification settings and enabl
 
 1. Create required files and directories:
 ```bash
-# Create configuration directory
-mkdir -p ~/.notification-relay
+# Create configuration and log directories
+mkdir -p ~/.notification-relay/logs
 chmod 750 ~/.notification-relay
+chmod 750 ~/.notification-relay/logs
+
+# Create .env file
+cat > .env << EOL
+# Server configuration
+PORT=5000
+CONFIG_DIR=~/.notification-relay
+LOG_DIR=~/.notification-relay/logs
+
+# User configuration (for file permissions)
+UID=$(id -u)
+GID=$(id -g)
+EOL
 
 # Create config.json
 cat > ~/.notification-relay/config.json << EOL
@@ -201,13 +214,44 @@ docker-compose up -d --build
 docker-compose down
 ```
 
+### Directory Structure
+```
+~/.notification-relay/
+├── config.json
+├── credentials.json
+├── decoration.json
+├── icons.json
+├── user-device-map.json
+└── logs/
+    └── notification-relay.log
+```
+
 ### Environment Variables
 
 The following environment variables can be configured in `.env`:
 - `PORT`: Server port number (default: 5000)
 - `CONFIG_DIR`: Path to configuration directory (default: ~/.notification-relay)
+- `LOG_DIR`: Path to log directory (default: ~/.notification-relay/logs)
 - `UID`: User ID for file permissions (default: current user's UID)
 - `GID`: Group ID for file permissions (default: current user's GID)
+
+### Logs
+
+The service logs are stored in `~/.notification-relay/logs/notification-relay.log`. You can view them in several ways:
+
+```bash
+# Using docker compose (all logs)
+docker-compose logs -f
+
+# Using docker compose (last 100 lines)
+docker-compose logs --tail=100 -f
+
+# Directly from log file
+tail -f ~/.notification-relay/logs/notification-relay.log
+
+# Last 100 lines from file
+tail -n 100 ~/.notification-relay/logs/notification-relay.log
+```
 
 ### Docker Compose Features
 - Builds image locally - no need for Docker Hub
@@ -215,3 +259,4 @@ The following environment variables can be configured in `.env`:
 - Automatic service restart on failure
 - Easy port configuration
 - Proper volume mounting for configuration files
+- Centralized logging with host directory mounting

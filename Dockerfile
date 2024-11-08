@@ -22,7 +22,7 @@ FROM alpine:latest
 
 WORKDIR /app
 
-# Install CA certificates for HTTPS
+# Install CA certificates for HTTPS and shadow for user management
 RUN apk add --no-cache ca-certificates shadow
 
 # Arguments for user creation
@@ -48,8 +48,9 @@ USER frappe
 # Set default environment variables
 ENV NOTIFICATION_RELAY_CONFIG=/etc/notification-relay/config.json
 ENV LISTEN_PORT=5000
+ENV GIN_MODE=release
 
 # Expose port (using environment variable)
 EXPOSE ${LISTEN_PORT}
 
-ENTRYPOINT ["/usr/local/bin/notification-relay"] 
+ENTRYPOINT ["/usr/local/bin/notification-relay"]
