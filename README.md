@@ -13,9 +13,6 @@ chmod 750 ~/.notification-relay/logs
 
 # Modify the .env file if you want to change the default values
 
-
-
-
 # Create config.json
 cat > ~/.notification-relay/config.json << EOL
 {
