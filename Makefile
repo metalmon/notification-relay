@@ -1,4 +1,4 @@
-PROGRAM_NAME = notification-relay
+PROGRAM_NAME = notification-relay-linux-amd64
 
 COMMIT=$(shell git rev-parse --short HEAD)
 BRANCH=$(shell git rev-parse --abbrev-ref HEAD)
@@ -14,7 +14,7 @@ TEST_CONFIG_FILE := $(TEST_CONFIG_DIR)/config.json
 DOCKER_IMAGE := metalmon/notification-relay
 DOCKER_TAG ?= $(shell git describe --tags --always)
 
-.PHONY: help clean dep build install uninstall lint lint-deps test test-race test-setup docker-build docker-push
+.PHONY: help clean dep build install uninstall lint lint-deps test test-race test-setup docker-build docker-push release
 
 .DEFAULT_GOAL := help
 
@@ -29,8 +29,13 @@ build: dep ## Build notification-relay executable.
 	mkdir -p ./bin
 	CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH} go build ${LDFLAGS} -o bin/${PROGRAM_NAME}
 
+release: build ## Create release archive
+	cd bin && tar czf ${PROGRAM_NAME}.tar.gz ${PROGRAM_NAME}
+	@echo "Release archive created: bin/${PROGRAM_NAME}.tar.gz"
+
 clean: ## Clean build directory.
 	rm -f ./bin/${PROGRAM_NAME}
+	rm -f ./bin/${PROGRAM_NAME}.tar.gz
 	rmdir ./bin
 	rm -rf $(TEST_CONFIG_DIR)
 
