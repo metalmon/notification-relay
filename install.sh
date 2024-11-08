@@ -25,6 +25,11 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Get the actual user who ran sudo (if applicable)
+REAL_USER="${SUDO_USER:-$USER}"
+REAL_UID=$(id -u "$REAL_USER")
+REAL_GID=$(id -g "$REAL_USER")
+
 # Create directories
 print_status "Creating directories..."
 mkdir -p /etc/notification-relay
@@ -55,8 +60,8 @@ Description=Frappe Push Notification Relay Server
 After=network.target
 
 [Service]
-User=frappe
-Group=www-data
+User=${REAL_USER}
+Group=${REAL_USER}
 WorkingDirectory=/etc/notification-relay
 Environment="GOOGLE_APPLICATION_CREDENTIALS=/etc/notification-relay/service-account.json"
 ExecStart=/usr/local/bin/notification-relay
@@ -98,10 +103,14 @@ fi
 
 # Set proper permissions
 print_status "Setting permissions..."
-chown -R frappe:www-data /etc/notification-relay
+chown -R ${REAL_UID}:${REAL_GID} /etc/notification-relay
 chmod 750 /etc/notification-relay
 chmod 640 /etc/notification-relay/config.json
 chmod 600 /etc/notification-relay/credentials.json
+
+# Set log directory permissions
+chown -R ${REAL_UID}:${REAL_GID} /var/log/notification-relay
+chmod 750 /var/log/notification-relay
 
 # Reload systemd and enable service
 print_status "Enabling service..."
