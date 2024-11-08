@@ -1,0 +1,63 @@
+---
+    name: Release
+    
+    on:
+      release:
+        types: [created]
+    
+    jobs:
+      test:
+        runs-on: ubuntu-latest
+    
+        steps:
+          - uses: actions/checkout@v3
+
+          - name: Set up Go
+            uses: actions/setup-go@v4
+            with:
+              go-version: '1.21'
+
+          - name: Install dependencies
+            run: make dep
+
+          - name: Run linter
+            run: make lint
+
+          - name: Run tests
+            run: |
+              mkdir -p testdata/etc/notification-relay
+              echo '{"vapid_public_key": "test", "firebase_config": {}}' > testdata/etc/notification-relay/config.json
+              echo '{}' > testdata/etc/notification-relay/credentials.json
+              echo '{}' > testdata/etc/notification-relay/user-device-map.json
+              echo '{}' > testdata/etc/notification-relay/decoration.json
+              echo '{}' > testdata/etc/notification-relay/icons.json
+              chmod -R 600 testdata/etc/notification-relay/*.json
+              chmod -R 700 testdata/etc/notification-relay
+              make test
+
+      build:
+        needs: test
+        runs-on: ubuntu-latest
+    
+        steps:
+          - uses: actions/checkout@v3
+            with:
+              fetch-depth: 0
+
+          - name: Set up Go
+            uses: actions/setup-go@v4
+            with:
+              go-version: '1.21'
+
+          - name: Build release
+            run: make release
+
+          - name: Upload release asset
+            uses: actions/upload-release-asset@v1
+            env:
+              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            with:
+              upload_url: ${{ github.event.release.upload_url }}
+              asset_path: ./bin/notification-relay-linux-amd64.tar.gz
+              asset_name: notification-relay-linux-amd64.tar.gz
+              asset_content_type: application/gzip

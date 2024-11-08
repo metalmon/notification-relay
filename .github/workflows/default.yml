@@ -1,0 +1,37 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Install dependencies
+        run: make dep
+
+      - name: Run linter
+        run: make lint
+
+      - name: Run tests
+        run: |
+          mkdir -p testdata/etc/notification-relay
+          echo '{"vapid_public_key": "test", "firebase_config": {}}' > testdata/etc/notification-relay/config.json
+          echo '{}' > testdata/etc/notification-relay/credentials.json
+          echo '{}' > testdata/etc/notification-relay/user-device-map.json
+          echo '{}' > testdata/etc/notification-relay/decoration.json
+          echo '{}' > testdata/etc/notification-relay/icons.json
+          chmod -R 600 testdata/etc/notification-relay/*.json
+          chmod -R 700 testdata/etc/notification-relay
+          make test
