@@ -13,6 +13,7 @@ chmod 750 ~/.notification-relay
 chmod 750 ~/.notification-relay/logs
 ```
 Modify the .env file if you want to change the default values
+
 Place your Firebase service account JSON file at ~/.notification-relay/service-account.json
 
 Create config.json
