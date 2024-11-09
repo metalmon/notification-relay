@@ -5,15 +5,18 @@ This repo provides a push notification relay server for Frappe Apps such as Rave
 
 ### Option 1: Docker Compose (Recommended)
 1. Create required files and directories:
-```bash
+
 # Create configuration and log directories
+```bash
 mkdir -p ~/.notification-relay/logs
 chmod 750 ~/.notification-relay
 chmod 750 ~/.notification-relay/logs
-
+```
 # Modify the .env file if you want to change the default values
+# Place your Firebase service account JSON file at ~/.notification-relay/service-account.json
 
 # Create config.json
+```bash
 cat > ~/.notification-relay/config.json << EOL
 {
     "vapid_public_key": "your_vapid_public_key",
@@ -28,8 +31,10 @@ cat > ~/.notification-relay/config.json << EOL
     }
 }
 EOL
+```
 
-# Create other configuration files
+# Create other configuration files and set proper permissions
+```bash
 touch ~/.notification-relay/credentials.json
 touch ~/.notification-relay/user-device-map.json
 touch ~/.notification-relay/decoration.json
@@ -44,13 +49,16 @@ chmod 600 ~/.notification-relay/*.json
 ```bash
 # Build and start
 docker-compose up -d
-
+```
+```bash
 # View logs
 docker-compose logs -f
-
+```
+```bash
 # Rebuild after code changes
 docker-compose up -d --build
-
+```
+```bash
 # Stop service
 docker-compose down
 ```
@@ -59,8 +67,10 @@ docker-compose down
 ```bash
 # Build the image
 docker build -t notification-relay .
+```
 
 # Run the container
+```bash
 docker run -d \
   -p 5000:5000 \
   -v ~/.notification-relay:/etc/notification-relay \
@@ -107,7 +117,6 @@ For detailed configuration examples and structure, see the [configuration docume
 
 All endpoints (except authentication) require Basic Authentication using the configured API key and secret.
 
-### Authentication
 - `POST /api/method/notification_relay.api.auth.get_credential`
   - Get API credentials for a Frappe site
   - Body: JSON with endpoint, protocol, port, token, and webhook_route
@@ -140,14 +149,20 @@ All endpoints (except authentication) require Basic Authentication using the con
   - Send notification to a topic
   - Query params: topic_name, title, body, data
 
-## ERPNext Integration
-Add the `API_SECRET` & `API_KEY` in ERPNext Push Notification settings and enable the Push Notification Relay option.
+## Frappe Integration
+# Add push relay server url to your site configuration
+```bash
+# Change <your site> and <your_push_relay_url:port> for according values
+bench --site <your site> set-config push_relay_server_url "<your_push_relay_url:port>"
+```
+# Enable the Push Notification Relay option in your app.
 
 ## Docker Environment
 
 ### Directory Structure
 ```
 ~/.notification-relay/
+├── service-account.json
 ├── config.json
 ├── credentials.json
 ├── decoration.json
