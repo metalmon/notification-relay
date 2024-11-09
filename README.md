@@ -4,18 +4,18 @@ This repo provides a push notification relay server for Frappe Apps such as Rave
 ## Installation
 
 ### Option 1: Docker Compose (Recommended)
-1. Create required files and directories:
+#### 1. Create required files and directories:
 
-#### Create configuration and log directories
+Create configuration and log directories
 ```bash
 mkdir -p ~/.notification-relay/logs
 chmod 750 ~/.notification-relay
 chmod 750 ~/.notification-relay/logs
 ```
-#### Modify the .env file if you want to change the default values
-#### Place your Firebase service account JSON file at ~/.notification-relay/service-account.json
+Modify the .env file if you want to change the default values
+Place your Firebase service account JSON file at ~/.notification-relay/service-account.json
 
-#### Create config.json
+Create config.json
 ```bash
 cat > ~/.notification-relay/config.json << EOL
 {
@@ -33,7 +33,7 @@ cat > ~/.notification-relay/config.json << EOL
 EOL
 ```
 
-#### Create other configuration files and set proper permissions
+Create other configuration files and set proper permissions
 ```bash
 touch ~/.notification-relay/credentials.json
 touch ~/.notification-relay/user-device-map.json
@@ -45,7 +45,7 @@ touch ~/.notification-relay/icons.json
 chmod 600 ~/.notification-relay/*.json
 ```
 
-2. Start the service:
+#### 2. Start the service:
 ```bash
 # Build and start
 docker-compose up -d
@@ -64,13 +64,13 @@ docker-compose down
 ```
 
 ### Option 2: Docker Build
-#### Build the image
+Build the image
 ```bash
 # Build the image
 docker build -t notification-relay .
 ```
 
-#### Run the container
+Run the container
 ```bash
 docker run -d \
   -p 5000:5000 \
@@ -81,12 +81,12 @@ docker run -d \
 ```
 
 ### Option 3: Easy Installation Script
-#### Run the following command to automatically download and install everything:
+Run the following command to automatically download and install everything:
 ```bash
 curl -sSL https://raw.githubusercontent.com/metalmon/notification-relay/main/install.sh | sudo bash
 ```
 
-#### After installation:
+After installation:
 1. Edit `/etc/notification-relay/config.json` with your configuration
 2. Place your Firebase service account JSON file at `/etc/notification-relay/service-account.json`
 3. Start the service:
@@ -151,12 +151,12 @@ All endpoints (except authentication) require Basic Authentication using the con
   - Query params: topic_name, title, body, data
 
 ## Frappe Integration
-#### Add push relay server url to your site configuration
+Add push relay server url to your site configuration
 ```bash
 # Change <your site> and <your_push_relay_url:port> for according values
 bench --site <your site> set-config push_relay_server_url "<your_push_relay_url:port>"
 ```
-# Enable the Push Notification Relay option in your app.
+Enable the Push Notification Relay option in your app.
 
 ## Docker Environment
 
