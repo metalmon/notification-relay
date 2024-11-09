@@ -17,12 +17,12 @@ The server uses several JSON configuration files:
 
 1. `config.json` - Firebase and VAPID configuration
 2. `credentials.json` - Generated API credentials for authenticated sites
-3. `decoration.json` - Notification decoration rules
-4. `icons.json` - Project icon paths
-5. `user-device-map.json` - User device token mapping
+3. `decoration.json` - Notification decoration rules and patterns for user notifications
+4. `topic-decoration.json` - Notification decoration rules and patterns for topic notifications
+5. `icons.json` - Project icon paths
+6. `user-device-map.json` - User device token mapping
 
 ## config.json
-
 Main configuration file containing Firebase and VAPID settings:
 
 ```json
