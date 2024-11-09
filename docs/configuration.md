@@ -79,25 +79,3 @@ Example:
 ```
 
 This file is automatically managed by the server - you don't need to edit it manually.
-
-## File Locations
-
-All configuration files should be placed in the project root directory:
-
-```
-/project_root
-├── config.json
-├── credentials.json
-├── decoration.json
-├── icons.json
-├── user-device-map.json
-└── icons/
-    ├── raven.png
-    ├── hrms.png
-    └── crm.png
-```
-
-## .gitignore
-
-# Configuration files containing sensitive data
-config
