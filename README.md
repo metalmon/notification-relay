@@ -6,16 +6,16 @@ This repo provides a push notification relay server for Frappe Apps such as Rave
 ### Option 1: Docker Compose (Recommended)
 1. Create required files and directories:
 
-# Create configuration and log directories
+#### Create configuration and log directories
 ```bash
 mkdir -p ~/.notification-relay/logs
 chmod 750 ~/.notification-relay
 chmod 750 ~/.notification-relay/logs
 ```
-# Modify the .env file if you want to change the default values
-# Place your Firebase service account JSON file at ~/.notification-relay/service-account.json
+#### Modify the .env file if you want to change the default values
+#### Place your Firebase service account JSON file at ~/.notification-relay/service-account.json
 
-# Create config.json
+#### Create config.json
 ```bash
 cat > ~/.notification-relay/config.json << EOL
 {
@@ -33,7 +33,7 @@ cat > ~/.notification-relay/config.json << EOL
 EOL
 ```
 
-# Create other configuration files and set proper permissions
+#### Create other configuration files and set proper permissions
 ```bash
 touch ~/.notification-relay/credentials.json
 touch ~/.notification-relay/user-device-map.json
@@ -64,12 +64,13 @@ docker-compose down
 ```
 
 ### Option 2: Docker Build
+#### Build the image
 ```bash
 # Build the image
 docker build -t notification-relay .
 ```
 
-# Run the container
+#### Run the container
 ```bash
 docker run -d \
   -p 5000:5000 \
@@ -80,12 +81,12 @@ docker run -d \
 ```
 
 ### Option 3: Easy Installation Script
-Run the following command to automatically download and install everything:
+#### Run the following command to automatically download and install everything:
 ```bash
 curl -sSL https://raw.githubusercontent.com/metalmon/notification-relay/main/install.sh | sudo bash
 ```
 
-After installation:
+#### After installation:
 1. Edit `/etc/notification-relay/config.json` with your configuration
 2. Place your Firebase service account JSON file at `/etc/notification-relay/service-account.json`
 3. Start the service:
@@ -150,7 +151,7 @@ All endpoints (except authentication) require Basic Authentication using the con
   - Query params: topic_name, title, body, data
 
 ## Frappe Integration
-# Add push relay server url to your site configuration
+#### Add push relay server url to your site configuration
 ```bash
 # Change <your site> and <your_push_relay_url:port> for according values
 bench --site <your site> set-config push_relay_server_url "<your_push_relay_url:port>"
@@ -159,7 +160,7 @@ bench --site <your site> set-config push_relay_server_url "<your_push_relay_url:
 
 ## Docker Environment
 
-### Directory Structure
+#### Directory Structure
 ```
 ~/.notification-relay/
 ├── service-account.json
@@ -172,7 +173,7 @@ bench --site <your site> set-config push_relay_server_url "<your_push_relay_url:
     └── notification-relay.log
 ```
 
-### Environment Variables
+#### Environment Variables
 
 The following environment variables can be configured in `.env`:
 - `PORT`: Server port number (default: 5000)
@@ -181,7 +182,7 @@ The following environment variables can be configured in `.env`:
 - `UID`: User ID for file permissions (default: current user's UID)
 - `GID`: Group ID for file permissions (default: current user's GID)
 
-### Logs
+#### Logs
 
 The service logs are stored in `~/.notification-relay/logs/notification-relay.log`. You can view them in several ways:
 
