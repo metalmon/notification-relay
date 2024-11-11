@@ -27,19 +27,78 @@ func TestInitFirebase(t *testing.T) {
 		errorMsg    string
 	}{
 		{
-			name: "missing required field",
+			name: "valid service account but invalid Firebase config",
 			setupEnv: func() {
 				content := `{
-					"type": "service_account",
-					"project_id": "test-project",
-					"client_email": "test@test.com"
+					"web": {
+						"client_id": "377489555157-test.apps.googleusercontent.com",
+						"project_id": "test-project",
+						"auth_uri": "https://accounts.google.com/o/oauth2/auth",
+						"token_uri": "https://oauth2.googleapis.com/token",
+						"auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+						"client_secret": "GOCSPX-test-secret",
+						"redirect_uris": ["https://example.com"],
+						"javascript_origins": ["https://example.com"]
+					}
 				}`
 				err := os.WriteFile(filepath.Join(tmpDir, "service-account.json"), []byte(content), 0644)
 				require.NoError(t, err)
 				os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", filepath.Join(tmpDir, "service-account.json"))
 			},
 			expectError: true,
-			errorMsg:    "failed to initialize Firebase: missing required field in service account: private_key",
+			errorMsg:    "failed to initialize messaging client",
+		},
+		{
+			name: "valid service account but fails Firebase init",
+			setupEnv: func() {
+				content := `{
+					"web": {
+						"client_id": "377489555157-test.apps.googleusercontent.com",
+						"project_id": "test-project",
+						"auth_uri": "https://accounts.google.com/o/oauth2/auth",
+						"token_uri": "https://oauth2.googleapis.com/token",
+						"auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+						"client_secret": "GOCSPX-test-secret",
+						"redirect_uris": ["https://example.com"],
+						"javascript_origins": ["https://example.com"]
+					}
+				}`
+				err := os.WriteFile(filepath.Join(tmpDir, "service-account.json"), []byte(content), 0644)
+				require.NoError(t, err)
+				os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", filepath.Join(tmpDir, "service-account.json"))
+			},
+			expectError: true,
+			errorMsg:    "failed to initialize messaging client: project ID is required",
+		},
+		{
+			name: "missing web config",
+			setupEnv: func() {
+				content := `{
+					"type": "service_account",
+					"project_id": "test-project"
+				}`
+				err := os.WriteFile(filepath.Join(tmpDir, "service-account.json"), []byte(content), 0644)
+				require.NoError(t, err)
+				os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", filepath.Join(tmpDir, "service-account.json"))
+			},
+			expectError: true,
+			errorMsg:    "failed to initialize Firebase: missing web configuration",
+		},
+		{
+			name: "missing required field",
+			setupEnv: func() {
+				content := `{
+					"web": {
+						"project_id": "test-project",
+						"auth_uri": "https://accounts.google.com/o/oauth2/auth"
+					}
+				}`
+				err := os.WriteFile(filepath.Join(tmpDir, "service-account.json"), []byte(content), 0644)
+				require.NoError(t, err)
+				os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", filepath.Join(tmpDir, "service-account.json"))
+			},
+			expectError: true,
+			errorMsg:    "failed to initialize Firebase: missing or invalid required field in web config: client_id",
 		},
 		{
 			name: "invalid service account json",

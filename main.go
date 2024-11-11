@@ -115,11 +115,38 @@ func initFirebase() error {
 		return fmt.Errorf("failed to initialize Firebase: invalid service account JSON: %v", err)
 	}
 
+	// Check for web configuration
+	webConfig, ok := jsonContent["web"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("failed to initialize Firebase: missing web configuration")
+	}
+
 	// Verify required fields
-	requiredFields := []string{"type", "project_id", "private_key", "client_email"}
+	requiredFields := []string{
+		"client_id",
+		"project_id",
+		"auth_uri",
+		"token_uri",
+		"auth_provider_x509_cert_url",
+		"client_secret",
+	}
+
 	for _, field := range requiredFields {
-		if _, ok := jsonContent[field]; !ok {
-			return fmt.Errorf("failed to initialize Firebase: missing required field in service account: %s", field)
+		if _, ok := webConfig[field].(string); !ok {
+			return fmt.Errorf("failed to initialize Firebase: missing or invalid required field in web config: %s", field)
+		}
+	}
+
+	// Optional fields validation
+	if redirectURIs, ok := webConfig["redirect_uris"].([]interface{}); ok {
+		if len(redirectURIs) == 0 {
+			return fmt.Errorf("failed to initialize Firebase: redirect_uris array is empty")
+		}
+	}
+
+	if origins, ok := webConfig["javascript_origins"].([]interface{}); ok {
+		if len(origins) == 0 {
+			return fmt.Errorf("failed to initialize Firebase: javascript_origins array is empty")
 		}
 	}
 
