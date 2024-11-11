@@ -49,6 +49,8 @@ USER frappe
 ENV NOTIFICATION_RELAY_CONFIG=/etc/notification-relay/config.json
 ENV LISTEN_PORT=5000
 ENV GIN_MODE=release
+# Set default trusted proxies (can be overridden at runtime)
+ENV TRUSTED_PROXIES="127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
 # Expose port (using environment variable)
 EXPOSE ${LISTEN_PORT}

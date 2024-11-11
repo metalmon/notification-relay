@@ -4,7 +4,35 @@ This repo provides a push notification relay server for Frappe Apps such as Rave
 ## Installation
 
 ### Option 1: Docker Compose (Recommended)
-#### 1. Create required files and directories:
+#### 1. Create .env file
+Copy the example environment file and adjust the values as needed:
+```bash
+# Copy the example file
+cp .env.example .env
+
+# Edit the file with your settings
+nano .env
+```
+
+The following environment variables can be configured in `.env`:
+- `PORT`: Server port number (default: 5000)
+- `CONFIG_DIR`: Path to configuration directory (default: ~/.notification-relay)
+- `LOG_DIR`: Path to log directory (default: ~/.notification-relay/logs)
+- `UID`: User ID for file permissions (default: current user's UID)
+- `GID`: Group ID for file permissions (default: current user's GID)
+- `TRUSTED_PROXIES`: Comma-separated list of trusted proxy CIDR ranges. Special values:
+  - `*`: Trust all proxies (not recommended)
+  - `none`: Trust no proxies
+  - Default: `127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`
+
+To get your current user's UID and GID:
+```bash
+echo "UID=$(id -u)"
+echo "GID=$(id -g)"
+```
+
+
+#### 2. Create required files and directories:
 
 Create configuration and log directories
 ```bash
@@ -12,7 +40,6 @@ mkdir -p ~/.notification-relay/logs
 chmod 750 ~/.notification-relay
 chmod 750 ~/.notification-relay/logs
 ```
-Modify the .env file if you want to change the default values
 
 Place your Firebase service account JSON file at ~/.notification-relay/service-account.json
 
@@ -29,7 +56,8 @@ cat > ~/.notification-relay/config.json << EOL
         "messagingSenderId": "your-sender-id",
         "appId": "your-app-id",
         "measurementId": "your-measurement-id"
-    }
+    },
+    "trusted_proxies": "127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 }
 EOL
 ```
@@ -46,7 +74,7 @@ touch ~/.notification-relay/icons.json
 chmod 600 ~/.notification-relay/*.json
 ```
 
-#### 2. Start the service:
+#### 3. Start the service:
 ```bash
 # Build and start
 docker-compose up -d
@@ -106,7 +134,7 @@ Firebase service account JSON file can be configured in several ways:
    - `/etc/notification-relay/service-account.json`
 
 ### Other Configuration Files
-- `config.json`: Main configuration file containing VAPID key and Firebase config
+- `config.json`: Main configuration file containing VAPID key, Firebase config and trusted proxies
 - `credentials.json`: Stores API keys and secrets for authenticated sites
 - `user-device-map.json`: Maps users to their device tokens
 - [`decoration.json`](docs/decoration.md): Notification decoration rules and patterns for user notifications
@@ -115,41 +143,15 @@ Firebase service account JSON file can be configured in several ways:
 
 For detailed configuration examples and structure, see the [configuration documentation](docs/configuration.md).
 
-## API Endpoints
+## API Documentation
 
-All endpoints (except authentication) require Basic Authentication using the configured API key and secret.
+The server provides several endpoints for managing notifications, topics, and device tokens. For detailed API documentation, see [API Documentation](docs/api.md).
 
-- `POST /api/method/notification_relay.api.auth.get_credential`
-  - Get API credentials for a Frappe site
-  - Body: JSON with endpoint, protocol, port, token, and webhook_route
-  - No authentication required for this endpoint
-
-- `GET /api/method/notification_relay.api.get_config`
-  - Returns VAPID public key and Firebase configuration
-
-- `POST /api/method/notification_relay.api.topic.subscribe`
-  - Subscribe a user to a notification topic
-  - Query params: project_name, site_name, user_id, topic_name
-
-- `POST /api/method/notification_relay.api.topic.unsubscribe`
-  - Unsubscribe a user from a notification topic
-  - Query params: project_name, site_name, user_id, topic_name
-
-- `POST /api/method/notification_relay.api.token.add`
-  - Add a device token for a user
-  - Query params: project_name, site_name, user_id, fcm_token
-
-- `POST /api/method/notification_relay.api.token.remove`
-  - Remove a device token for a user
-  - Query params: project_name, site_name, user_id, fcm_token
-
-- `POST /api/method/notification_relay.api.send_notification.user`
-  - Send notification to a specific user
-  - Query params: project_name, site_name, user_id, title, body, data
-
-- `POST /api/method/notification_relay.api.send_notification.topic`
-  - Send notification to a topic
-  - Query params: topic_name, title, body, data
+Key features include:
+- Authentication and credential management
+- Topic subscription management
+- Device token management
+- User and topic notification sending
 
 ## Frappe Integration
 Add push relay server url to your site configuration

@@ -11,6 +11,7 @@ services:
       - LISTEN_PORT=${PORT:-5000}
       - GIN_MODE=release
       - GOOGLE_APPLICATION_CREDENTIALS=/etc/notification-relay/service-account.json
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
     volumes:
       - ${CONFIG_DIR:-~/.notification-relay}:/etc/notification-relay
       - ${LOG_DIR:-~/.notification-relay/logs}:/var/log/notification-relay
