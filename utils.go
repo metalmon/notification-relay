@@ -8,20 +8,6 @@ import (
 	"path/filepath"
 )
 
-var (
-	configPath string
-	// Whitelist of allowed configuration files
-	allowedFiles = map[string]bool{
-		ConfigJSON:          true,
-		CredentialsJSON:     true,
-		UserDeviceMapJSON:   true,
-		DecorationJSON:      true,
-		IconsJSON:           true,
-		TopicDecorationJSON: true,
-		"test.json":         true,
-	}
-)
-
 func getConfigPath(filename string) string {
 	// Check if file is allowed
 	if !allowedFiles[filename] {
@@ -31,6 +17,19 @@ func getConfigPath(filename string) string {
 	// Get directory from configPath
 	configDir := filepath.Dir(configPath)
 	return filepath.Join(configDir, filename)
+}
+
+var (
+	credentials Credentials
+)
+
+// Add initialization function that will be called after configPath is set
+func initCredentials() {
+	// Load credentials from file
+	ensureFileExists(CredentialsJSON, make(Credentials))
+	if err := loadJSON(CredentialsJSON, &credentials); err != nil {
+		log.Fatalf("Failed to load credentials: %v", err)
+	}
 }
 
 // initConfig initializes the configuration path
@@ -70,12 +69,10 @@ func loadDataFiles() {
 func ensureFileExists(filename string, defaultValue interface{}) {
 	fullPath := getConfigPath(filename)
 	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-		// Create directory if it doesn't exist
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0o700); err != nil {
 			log.Fatalf("Failed to create directory for %s: %v", filename, err)
 		}
-		// Save default value and check for errors
-		if err := saveJSON(fullPath, defaultValue); err != nil {
+		if err := writeJSONToFile(fullPath, defaultValue); err != nil {
 			log.Fatalf("Failed to save default value for %s: %v", filename, err)
 		}
 	}
@@ -97,11 +94,15 @@ func loadJSON(filename string, v interface{}) error {
 	return json.Unmarshal(file, v)
 }
 
-func saveJSON(filename string, v interface{}) error {
-	fullPath := getConfigPath(filename)
+func writeJSONToFile(fullPath string, v interface{}) error {
 	data, err := json.MarshalIndent(v, "", "    ")
 	if err != nil {
 		panic(fmt.Sprintf("Failed to marshal JSON: %v", err))
 	}
 	return os.WriteFile(fullPath, data, 0o600)
+}
+
+func saveJSON(filename string, v interface{}) error {
+	fullPath := getConfigPath(filename)
+	return writeJSONToFile(fullPath, v)
 }

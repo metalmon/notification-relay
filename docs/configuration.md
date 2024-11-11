@@ -12,6 +12,11 @@
 
 - `LISTEN_PORT`: Server port number. If not set, defaults to `5000`
 
+- `TRUSTED_PROXIES`: Comma-separated list of trusted proxy CIDR ranges. If not set, uses value from config.json. Special values:
+  - `*`: Trust all proxies (not recommended)
+  - `none`: Trust no proxies
+  - Default: `127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`
+
 ## File Structure
 The server uses several JSON configuration files:
 
@@ -36,7 +41,8 @@ Main configuration file containing Firebase and VAPID settings:
         "messagingSenderId": "your-sender-id",
         "appId": "your-app-id",
         "measurementId": "your-measurement-id"
-    }
+    },
+    "trusted_proxies": "127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 }
 ```
 

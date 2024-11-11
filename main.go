@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"net"
 	"os"
+	"strings"
 
 	firebase "firebase.google.com/go/v4"
 	"github.com/gin-gonic/gin"
@@ -23,6 +26,8 @@ const (
 	TopicDecorationJSON = "topic-decoration.json"
 	// IconsJSON maps projects to their icon paths
 	IconsJSON = "icons.json"
+	// DefaultTrustedProxies defines default CIDR ranges for trusted proxies
+	DefaultTrustedProxies = "127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 )
 
 var (
@@ -33,6 +38,17 @@ var (
 	topicDecorations   = make(map[string]TopicDecoration)
 	icons              = make(map[string]string)
 	serviceAccountPath string
+	configPath         string
+	// Whitelist of allowed configuration files
+	allowedFiles = map[string]bool{
+		ConfigJSON:          true,
+		CredentialsJSON:     true,
+		UserDeviceMapJSON:   true,
+		DecorationJSON:      true,
+		IconsJSON:           true,
+		TopicDecorationJSON: true,
+		"test.json":         true,
+	}
 )
 
 func init() {
@@ -60,6 +76,7 @@ func init() {
 type Config struct {
 	VapidPublicKey string                 `json:"vapid_public_key"`
 	FirebaseConfig map[string]interface{} `json:"firebase_config"`
+	TrustedProxies string                 `json:"trusted_proxies"`
 }
 
 func main() {
@@ -86,8 +103,22 @@ func main() {
 	// Setup router
 	router := gin.Default()
 
+	// Configure trusted proxies
+	trustedProxies := os.Getenv("TRUSTED_PROXIES")
+	if trustedProxies == "" {
+		trustedProxies = config.TrustedProxies // From config file
+		if trustedProxies == "" {
+			trustedProxies = DefaultTrustedProxies
+		}
+	}
+
+	if err := setTrustedProxies(router, trustedProxies); err != nil {
+		log.Printf("Warning: Failed to set trusted proxies: %v", err)
+	}
+
 	// API routes
 	router.POST("/api/method/notification_relay.api.auth.get_credential", getCredential)
+	router.POST("/api/method/notification_relay.api.get_config", getConfig)
 
 	// Protected routes
 	auth := router.Group("/", apiBasicAuth())
@@ -106,4 +137,31 @@ func main() {
 	if err := router.Run(":" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
+}
+
+func setTrustedProxies(router *gin.Engine, trustedProxies string) error {
+	if trustedProxies == "*" {
+		return router.SetTrustedProxies(nil) // Trust all proxies
+	}
+
+	if trustedProxies == "none" {
+		return router.SetTrustedProxies([]string{}) // Trust no proxies
+	}
+
+	// Split the comma-separated list
+	proxyList := strings.Split(trustedProxies, ",")
+
+	// Validate each CIDR
+	for _, proxy := range proxyList {
+		proxy = strings.TrimSpace(proxy)
+		if proxy == "" {
+			continue
+		}
+		_, _, err := net.ParseCIDR(proxy)
+		if err != nil {
+			return fmt.Errorf("invalid CIDR %q: %v", proxy, err)
+		}
+	}
+
+	return router.SetTrustedProxies(proxyList)
 }

@@ -182,6 +182,7 @@ The following environment variables can be configured in `.env`:
 - `LOG_DIR`: Path to log directory (default: ~/.notification-relay/logs)
 - `UID`: User ID for file permissions (default: current user's UID)
 - `GID`: Group ID for file permissions (default: current user's GID)
+- `TRUSTED_PROXIES`: Comma-separated list of trusted proxy CIDR ranges
 
 #### Logs
 

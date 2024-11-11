@@ -31,6 +31,7 @@ type CredentialResponse struct {
 	Success     bool               `json:"success"`
 	Message     string             `json:"message,omitempty"`
 	Credentials *CredentialDetails `json:"credentials,omitempty"`
+	Exc         string             `json:"exc,omitempty"`
 }
 
 // CredentialDetails contains generated API credentials
@@ -61,17 +62,39 @@ type TopicDecoration struct {
 	Template string `json:"template"`
 }
 
-var (
-	credentials Credentials
-)
+// ConfigResponse represents the response structure for the getConfig endpoint
+type ConfigResponse struct {
+	VapidPublicKey string                 `json:"vapid_public_key"`
+	Config         map[string]interface{} `json:"config"`
+	Exc            string                 `json:"exc,omitempty"`
+}
 
-// Add initialization function that will be called after configPath is set
-func initCredentials() {
-	// Load credentials from file
-	ensureFileExists(CredentialsJSON, make(Credentials))
-	if err := loadJSON(CredentialsJSON, &credentials); err != nil {
-		log.Fatalf("Failed to load credentials: %v", err)
+// getConfig returns the VAPID public key and Firebase configuration
+func getConfig(c *gin.Context) {
+	var response ConfigResponse
+
+	// Check if required configuration is available
+	if config.VapidPublicKey == "" {
+		c.JSON(http.StatusInternalServerError, Response{
+			Exc: "VAPID public key not configured",
+		})
+		return
 	}
+
+	if config.FirebaseConfig == nil {
+		c.JSON(http.StatusInternalServerError, Response{
+			Exc: "Firebase configuration not initialized",
+		})
+		return
+	}
+
+	// Create successful response with configuration values
+	response = ConfigResponse{
+		VapidPublicKey: config.VapidPublicKey,
+		Config:         config.FirebaseConfig,
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // getCredential handles API credential requests by validating the request,
@@ -82,7 +105,7 @@ func initCredentials() {
 func getCredential(c *gin.Context) {
 	var req CredentialRequest
 	if err := c.BindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, CredentialResponse{
+		c.JSON(http.StatusOK, CredentialResponse{
 			Success: false,
 			Message: "Invalid request format",
 		})
@@ -91,7 +114,7 @@ func getCredential(c *gin.Context) {
 
 	// Validate the request
 	if req.Endpoint == "" || req.Token == "" {
-		c.JSON(http.StatusBadRequest, CredentialResponse{
+		c.JSON(http.StatusOK, CredentialResponse{
 			Success: false,
 			Message: "Missing required fields",
 		})
@@ -114,7 +137,7 @@ func getCredential(c *gin.Context) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(webhookURL)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, CredentialResponse{
+		c.JSON(http.StatusOK, CredentialResponse{
 			Success: false,
 			Message: "Failed to verify token",
 		})
@@ -129,7 +152,7 @@ func getCredential(c *gin.Context) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		c.JSON(http.StatusUnauthorized, CredentialResponse{
+		c.JSON(http.StatusOK, CredentialResponse{
 			Success: false,
 			Message: "Token verification failed",
 		})
@@ -138,7 +161,7 @@ func getCredential(c *gin.Context) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil || string(body) != req.Token {
-		c.JSON(http.StatusUnauthorized, CredentialResponse{
+		c.JSON(http.StatusOK, CredentialResponse{
 			Success: false,
 			Message: "Invalid token",
 		})
@@ -154,8 +177,7 @@ func getCredential(c *gin.Context) {
 	err = saveJSON(CredentialsJSON, credentials)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, CredentialResponse{
-			Success: false,
-			Message: "Failed to save credentials",
+			Exc: fmt.Sprintf("Failed to save credentials: %v", err),
 		})
 		return
 	}

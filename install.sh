@@ -86,7 +86,8 @@ if [ ! -f /etc/notification-relay/config.json ]; then
         "messagingSenderId": "",
         "appId": "",
         "measurementId": ""
-    }
+    },
+    "trusted_proxies": "127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 }
 EOL
     print_warning "Please edit /etc/notification-relay/config.json with your VAPID key and Firebase configuration"
