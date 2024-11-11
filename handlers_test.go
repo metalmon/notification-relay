@@ -808,3 +808,336 @@ func TestAddIconToConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestAddToken(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	tests := []struct {
+		name           string
+		queryParams    map[string]string
+		setupUserMap   func()
+		expectedStatus int
+		expectedBody   map[string]interface{}
+		checkUserMap   func(*testing.T)
+	}{
+		{
+			name: "add new token",
+			queryParams: map[string]string{
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"user_id":      "test_user",
+				"fcm_token":    "new_token",
+			},
+			setupUserMap: func() {
+				userDeviceMap = make(map[string]map[string][]string)
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": map[string]interface{}{
+					"success": true,
+					"message": "User Token added",
+				},
+			},
+			checkUserMap: func(t *testing.T) {
+				tokens := userDeviceMap["test_project_test_site"]["test_user"]
+				assert.Equal(t, []string{"new_token"}, tokens)
+			},
+		},
+		{
+			name: "add duplicate token",
+			queryParams: map[string]string{
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"user_id":      "test_user",
+				"fcm_token":    "existing_token",
+			},
+			setupUserMap: func() {
+				userDeviceMap = map[string]map[string][]string{
+					"test_project_test_site": {
+						"test_user": {"existing_token"},
+					},
+				}
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": map[string]interface{}{
+					"success": true,
+					"message": "User Token duplicate found",
+				},
+			},
+			checkUserMap: func(t *testing.T) {
+				tokens := userDeviceMap["test_project_test_site"]["test_user"]
+				assert.Equal(t, []string{"existing_token"}, tokens)
+			},
+		},
+		{
+			name: "missing token",
+			queryParams: map[string]string{
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"user_id":      "test_user",
+			},
+			setupUserMap: func() {
+				userDeviceMap = make(map[string]map[string][]string)
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": map[string]interface{}{
+					"success": false,
+					"message": "FCM token is required",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := createTestContext(w)
+
+			tt.setupUserMap()
+
+			// Setup request with query parameters
+			req, err := http.NewRequest(http.MethodPost, "/add-token", nil)
+			require.NoError(t, err)
+			q := req.URL.Query()
+			for k, v := range tt.queryParams {
+				q.Add(k, v)
+			}
+			req.URL.RawQuery = q.Encode()
+			c.Request = req
+
+			addToken(c)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			var response map[string]interface{}
+			err = json.NewDecoder(w.Body).Decode(&response)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedBody, response)
+
+			if tt.checkUserMap != nil {
+				tt.checkUserMap(t)
+			}
+		})
+	}
+}
+
+func TestRemoveToken(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	tests := []struct {
+		name           string
+		queryParams    map[string]string
+		setupUserMap   func()
+		expectedStatus int
+		expectedBody   map[string]interface{}
+		checkUserMap   func(*testing.T)
+	}{
+		{
+			name: "remove existing token",
+			queryParams: map[string]string{
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"user_id":      "test_user",
+				"fcm_token":    "existing_token",
+			},
+			setupUserMap: func() {
+				userDeviceMap = map[string]map[string][]string{
+					"test_project_test_site": {
+						"test_user": {"existing_token", "other_token"},
+					},
+				}
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": map[string]interface{}{
+					"success": true,
+					"message": "User Token removed",
+				},
+			},
+			checkUserMap: func(t *testing.T) {
+				tokens := userDeviceMap["test_project_test_site"]["test_user"]
+				assert.Equal(t, []string{"other_token"}, tokens)
+			},
+		},
+		{
+			name: "remove non-existent token",
+			queryParams: map[string]string{
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"user_id":      "test_user",
+				"fcm_token":    "nonexistent_token",
+			},
+			setupUserMap: func() {
+				userDeviceMap = map[string]map[string][]string{
+					"test_project_test_site": {
+						"test_user": {"existing_token"},
+					},
+				}
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": map[string]interface{}{
+					"success": true,
+					"message": "User Token not found, removed",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := createTestContext(w)
+
+			tt.setupUserMap()
+
+			// Setup request with query parameters
+			req, err := http.NewRequest(http.MethodPost, "/remove-token", nil)
+			require.NoError(t, err)
+			q := req.URL.Query()
+			for k, v := range tt.queryParams {
+				q.Add(k, v)
+			}
+			req.URL.RawQuery = q.Encode()
+			c.Request = req
+
+			removeToken(c)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			var response map[string]interface{}
+			err = json.NewDecoder(w.Body).Decode(&response)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedBody, response)
+
+			if tt.checkUserMap != nil {
+				tt.checkUserMap(t)
+			}
+		})
+	}
+}
+
+func TestApplyTopicDecorations(t *testing.T) {
+	tests := []struct {
+		name             string
+		topic            string
+		title            string
+		setupDecorations func()
+		expected         string
+	}{
+		{
+			name:  "no decorations",
+			topic: "test_topic",
+			title: "Test Title",
+			setupDecorations: func() {
+				topicDecorations = make(map[string]TopicDecoration)
+			},
+			expected: "Test Title",
+		},
+		{
+			name:  "matching decoration",
+			topic: "test_topic",
+			title: "Alert: Test Message",
+			setupDecorations: func() {
+				topicDecorations = map[string]TopicDecoration{
+					"test_topic": {
+						Pattern:  "^Alert:",
+						Template: "📢 {title}",
+					},
+				}
+			},
+			expected: "📢 Alert: Test Message",
+		},
+		{
+			name:  "non-matching decoration",
+			topic: "test_topic",
+			title: "Normal Message",
+			setupDecorations: func() {
+				topicDecorations = map[string]TopicDecoration{
+					"test_topic": {
+						Pattern:  "^Alert:",
+						Template: "📢 {title}",
+					},
+				}
+			},
+			expected: "Normal Message",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setupDecorations()
+			result := applyTopicDecorations(tt.topic, tt.title)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestPrepareTopicWebPushConfig(t *testing.T) {
+	tests := []struct {
+		name           string
+		topic          string
+		title          string
+		body           string
+		data           string
+		setupData      func()
+		expectError    bool
+		validateConfig func(*testing.T, *messaging.WebpushConfig)
+	}{
+		{
+			name:  "basic config",
+			topic: "test_topic",
+			title: "Test Title",
+			body:  "Test Body",
+			data:  "",
+			validateConfig: func(t *testing.T, config *messaging.WebpushConfig) {
+				assert.Equal(t, "Test Title", config.Notification.Title)
+				assert.Equal(t, "Test Body", config.Notification.Body)
+			},
+		},
+		{
+			name:  "with click action",
+			topic: "test_topic",
+			title: "Test Title",
+			body:  "Test Body",
+			data:  `{"click_action": "https://example.com", "icon": "/path/to/icon.png"}`,
+			validateConfig: func(t *testing.T, config *messaging.WebpushConfig) {
+				assert.Equal(t, "https://example.com", config.FCMOptions.Link)
+				assert.Equal(t, "/path/to/icon.png", config.Data["icon"])
+			},
+		},
+		{
+			name:        "invalid data json",
+			topic:       "test_topic",
+			title:       "Test Title",
+			body:        "Test Body",
+			data:        "invalid json",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.setupData != nil {
+				tt.setupData()
+			}
+
+			config, err := prepareTopicWebPushConfig(tt.topic, tt.title, tt.body, tt.data)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.NotNil(t, config)
+			if tt.validateConfig != nil {
+				tt.validateConfig(t, config)
+			}
+		})
+	}
+}
