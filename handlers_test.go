@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -172,65 +171,6 @@ func TestGetCredential(t *testing.T) {
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
 			tt.checkResponse(t, w)
-		})
-	}
-}
-
-func TestAPIBasicAuth(t *testing.T) {
-	_, cleanup := setupTestEnvironment(t)
-	defer cleanup()
-
-	tests := []struct {
-		name           string
-		setupAuth      func()
-		credentials    string
-		expectedStatus int
-	}{
-		{
-			name: "valid credentials",
-			setupAuth: func() {
-				credentials["valid-key"] = "valid-secret"
-			},
-			credentials:    base64.StdEncoding.EncodeToString([]byte("valid-key:valid-secret")),
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "missing auth header",
-			setupAuth:      func() {},
-			credentials:    "",
-			expectedStatus: http.StatusUnauthorized,
-		},
-		{
-			name: "invalid credentials",
-			setupAuth: func() {
-				credentials["valid-key"] = "valid-secret"
-			},
-			credentials:    base64.StdEncoding.EncodeToString([]byte("invalid-key:invalid-secret")),
-			expectedStatus: http.StatusUnauthorized,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			w := httptest.NewRecorder()
-			_, router := createTestContext(w)
-
-			tt.setupAuth()
-
-			// Create test endpoint with auth middleware
-			router.GET("/test", apiBasicAuth(), func(c *gin.Context) {
-				c.Status(http.StatusOK)
-			})
-
-			req, err := makeTestRequest(http.MethodGet, "/test", nil)
-			require.NoError(t, err)
-			if tt.credentials != "" {
-				req.Header.Set("Authorization", fmt.Sprintf("Basic %s", tt.credentials))
-			}
-
-			router.ServeHTTP(w, req)
-
-			assert.Equal(t, tt.expectedStatus, w.Code)
 		})
 	}
 }
@@ -1137,6 +1077,281 @@ func TestPrepareTopicWebPushConfig(t *testing.T) {
 			assert.NotNil(t, config)
 			if tt.validateConfig != nil {
 				tt.validateConfig(t, config)
+			}
+		})
+	}
+}
+
+func TestSendNotificationToTopic(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	mockClient := &mocks.MockFirebaseMessagingClient{}
+	messagingClient = mockClient
+
+	tests := []struct {
+		name           string
+		setupMock      func()
+		queryParams    map[string]string
+		expectedStatus int
+		expectedBody   map[string]interface{}
+	}{
+		{
+			name: "successful notification",
+			setupMock: func() {
+				mockClient.On("Send",
+					mock.Anything,
+					mock.MatchedBy(func(msg *messaging.Message) bool {
+						return msg.Topic == "test_topic" &&
+							msg.Webpush.Notification.Title == "Test Title" &&
+							msg.Webpush.Notification.Body == "Test Body"
+					}),
+				).Return("message_id", nil)
+			},
+			queryParams: map[string]string{
+				"topic_name": "test_topic",
+				"title":      "Test Title",
+				"body":       "Test Body",
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": map[string]interface{}{
+					"success": true,
+					"message": "Notification sent to test_topic topic",
+				},
+			},
+		},
+		{
+			name:      "missing topic name",
+			setupMock: func() {},
+			queryParams: map[string]string{
+				"title": "Test Title",
+				"body":  "Test Body",
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": map[string]interface{}{
+					"success": false,
+					"message": "topic_name is required",
+				},
+			},
+		},
+		{
+			name:      "missing title",
+			setupMock: func() {},
+			queryParams: map[string]string{
+				"topic_name": "test_topic",
+				"body":       "Test Body",
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": map[string]interface{}{
+					"success": false,
+					"message": "title is required",
+				},
+			},
+		},
+		{
+			name: "firebase client error",
+			setupMock: func() {
+				mockClient.On("Send",
+					mock.Anything,
+					mock.Anything,
+				).Return("", fmt.Errorf("firebase error"))
+			},
+			queryParams: map[string]string{
+				"topic_name": "test_topic",
+				"title":      "Test Title",
+				"body":       "Test Body",
+			},
+			expectedStatus: http.StatusInternalServerError,
+			expectedBody: map[string]interface{}{
+				"exc": `["Failed to send notification: firebase error"]`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := createTestContext(w)
+
+			// Setup mock
+			mockClient.ExpectedCalls = nil
+			tt.setupMock()
+
+			// Setup request with query parameters
+			req, err := http.NewRequest(http.MethodPost, "/send-topic", nil)
+			require.NoError(t, err)
+			q := req.URL.Query()
+			for k, v := range tt.queryParams {
+				q.Add(k, v)
+			}
+			req.URL.RawQuery = q.Encode()
+			c.Request = req
+
+			sendNotificationToTopic(c)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			var response map[string]interface{}
+			err = json.NewDecoder(w.Body).Decode(&response)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedBody, response)
+
+			mockClient.AssertExpectations(t)
+		})
+	}
+}
+
+func TestGetUserTokens(t *testing.T) {
+	tests := []struct {
+		name        string
+		key         string
+		userID      string
+		setupMap    func()
+		expectError bool
+		expected    []string
+	}{
+		{
+			name:   "existing user with tokens",
+			key:    "test_project",
+			userID: "test_user",
+			setupMap: func() {
+				userDeviceMap = map[string]map[string][]string{
+					"test_project": {
+						"test_user": {"token1", "token2"},
+					},
+				}
+			},
+			expected: []string{"token1", "token2"},
+		},
+		{
+			name:   "user with no tokens",
+			key:    "test_project",
+			userID: "test_user",
+			setupMap: func() {
+				userDeviceMap = map[string]map[string][]string{
+					"test_project": {
+						"test_user": {},
+					},
+				}
+			},
+			expectError: true,
+		},
+		{
+			name:   "nonexistent user",
+			key:    "test_project",
+			userID: "nonexistent_user",
+			setupMap: func() {
+				userDeviceMap = map[string]map[string][]string{
+					"test_project": {},
+				}
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setupMap()
+
+			tokens, err := getUserTokens(tt.key, tt.userID)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), "not subscribed to push notifications")
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expected, tokens)
+			}
+		})
+	}
+}
+
+func TestAPIBasicAuth(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	tests := []struct {
+		name             string
+		setupAuth        func()
+		setupHeader      func(*http.Request)
+		expectedStatus   int
+		expectAuthHeader bool
+	}{
+		{
+			name: "valid credentials",
+			setupAuth: func() {
+				credentials["valid-key"] = "valid-secret"
+			},
+			setupHeader: func(req *http.Request) {
+				req.SetBasicAuth("valid-key", "valid-secret")
+			},
+			expectedStatus:   http.StatusOK,
+			expectAuthHeader: false,
+		},
+		{
+			name:      "missing auth header",
+			setupAuth: func() {},
+			setupHeader: func(req *http.Request) {
+				// No auth header
+			},
+			expectedStatus:   http.StatusUnauthorized,
+			expectAuthHeader: true,
+		},
+		{
+			name: "invalid credentials",
+			setupAuth: func() {
+				credentials["valid-key"] = "valid-secret"
+			},
+			setupHeader: func(req *http.Request) {
+				req.SetBasicAuth("invalid-key", "invalid-secret")
+			},
+			expectedStatus:   http.StatusUnauthorized,
+			expectAuthHeader: true,
+		},
+		{
+			name: "wrong secret for valid key",
+			setupAuth: func() {
+				credentials["valid-key"] = "valid-secret"
+			},
+			setupHeader: func(req *http.Request) {
+				req.SetBasicAuth("valid-key", "wrong-secret")
+			},
+			expectedStatus:   http.StatusUnauthorized,
+			expectAuthHeader: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			_, router := createTestContext(w)
+
+			tt.setupAuth()
+
+			// Create test endpoint with auth middleware
+			router.GET("/test", apiBasicAuth(), func(c *gin.Context) {
+				c.Status(http.StatusOK)
+			})
+
+			// Create request
+			req, err := http.NewRequest(http.MethodGet, "/test", nil)
+			require.NoError(t, err)
+
+			// Setup auth header
+			tt.setupHeader(req)
+
+			// Serve the request
+			router.ServeHTTP(w, req)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.expectAuthHeader {
+				assert.Equal(t, "Basic realm=Authorization Required", w.Header().Get("WWW-Authenticate"))
+			} else {
+				assert.Empty(t, w.Header().Get("WWW-Authenticate"))
 			}
 		})
 	}

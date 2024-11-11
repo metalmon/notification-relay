@@ -219,6 +219,7 @@ func apiBasicAuth() gin.HandlerFunc {
 		}
 
 		if storedSecret, exists := credentials[apiKey]; !exists || storedSecret != apiSecret {
+			c.Header("WWW-Authenticate", "Basic realm=Authorization Required")
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}

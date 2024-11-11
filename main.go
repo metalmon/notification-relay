@@ -153,12 +153,14 @@ func main() {
 }
 
 func setTrustedProxies(router *gin.Engine, trustedProxies string) error {
-	if trustedProxies == "*" {
-		return router.SetTrustedProxies(nil) // Trust all proxies
+	trustedProxies = strings.TrimSpace(trustedProxies)
+
+	if trustedProxies == "" || trustedProxies == "none" {
+		return router.SetTrustedProxies([]string{}) // Trust no proxies
 	}
 
-	if trustedProxies == "none" {
-		return router.SetTrustedProxies([]string{}) // Trust no proxies
+	if trustedProxies == "*" {
+		return router.SetTrustedProxies(nil) // Trust all proxies
 	}
 
 	// Split the comma-separated list
