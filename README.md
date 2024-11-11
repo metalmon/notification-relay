@@ -170,6 +170,7 @@ Enable the Push Notification Relay option in your app.
 ├── config.json
 ├── credentials.json
 ├── decoration.json
+├── topic-decoration.json
 ├── icons.json
 ├── user-device-map.json
 └── logs/
@@ -193,13 +194,16 @@ The service logs are stored in `~/.notification-relay/logs/notification-relay.lo
 ```bash
 # Using docker compose (all logs)
 docker-compose logs -f
-
+```
+```bash
 # Using docker compose (last 100 lines)
 docker-compose logs --tail=100 -f
-
+```
+```bash
 # Directly from log file
 tail -f ~/.notification-relay/logs/notification-relay.log
-
+```
+```bash
 # Last 100 lines from file
 tail -n 100 ~/.notification-relay/logs/notification-relay.log
 ```
