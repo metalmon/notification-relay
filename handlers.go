@@ -17,13 +17,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CredentialRequest represents a request for API credentials
+// CredentialRequest represents a request for API credentials with validation requirements
 type CredentialRequest struct {
-	Endpoint     string `json:"endpoint"`
-	Protocol     string `json:"protocol"`
-	Port         string `json:"port"`
-	Token        string `json:"token"`
-	WebhookRoute string `json:"webhook_route"`
+	Endpoint     string `json:"endpoint"`      // Required: The endpoint URL
+	Protocol     string `json:"protocol"`      // The protocol (http/https)
+	Port         string `json:"port"`          // Optional: The port number
+	Token        string `json:"token"`         // Required: Authentication token
+	WebhookRoute string `json:"webhook_route"` // The webhook route path
 }
 
 // CredentialResponse represents an API credentials response
@@ -43,11 +43,11 @@ type CredentialDetails struct {
 // Credentials represents a map of API credentials
 type Credentials map[string]string
 
-// Response represents the standard API response structure
+// Response represents the standard API response structure with optional fields
 type Response struct {
-	Message interface{} `json:"message,omitempty"` // For successful responses
-	Data    interface{} `json:"data,omitempty"`    // For data responses
-	Exc     string      `json:"exc,omitempty"`     // For critical errors
+	Message interface{} `json:"message,omitempty"` // Success message or status information
+	Data    interface{} `json:"data,omitempty"`    // Response payload data
+	Exc     string      `json:"exc,omitempty"`     // Error message for critical failures
 }
 
 // Decoration represents a notification title decoration rule for user notifications
@@ -197,13 +197,18 @@ func generateSecureToken(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, length)
 	for i := range b {
-		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		if err != nil {
+			log.Printf("Error generating random number: %v", err)
+			continue
+		}
 		b[i] = charset[n.Int64()]
 	}
 	return string(b)
 }
 
-// apiBasicAuth middleware для проверки Basic Auth
+// apiBasicAuth returns a middleware handler that performs Basic Auth validation
+// using API credentials stored in the credentials map.
 func apiBasicAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		apiKey, apiSecret, hasAuth := c.Request.BasicAuth()
@@ -234,16 +239,10 @@ func subscribeToTopic(c *gin.Context) {
 	topicName := c.Query("topic_name")
 
 	if tokens, exists := userDeviceMap[key][userID]; exists && len(tokens) > 0 {
-		ctx := context.Background()
-		client, err := fbApp.Messaging(ctx)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, Response{
-				Exc: fmt.Sprintf("Failed to initialize messaging client: %v", err),
-			})
-			return
-		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-		_, err = client.SubscribeToTopic(ctx, tokens, topicName)
+		_, err := messagingClient.SubscribeToTopic(ctx, tokens, topicName)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, Response{
 				Exc: fmt.Sprintf("Failed to subscribe to topic: %v", err),
@@ -292,16 +291,10 @@ func unsubscribeFromTopic(c *gin.Context) {
 	}
 
 	if tokens, exists := userDeviceMap[key][userID]; exists && len(tokens) > 0 {
-		ctx := context.Background()
-		client, err := fbApp.Messaging(ctx)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, Response{
-				Exc: fmt.Sprintf("Failed to initialize messaging client: %v", err),
-			})
-			return
-		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-		_, err = client.UnsubscribeFromTopic(ctx, tokens, topicName)
+		_, err := messagingClient.UnsubscribeFromTopic(ctx, tokens, topicName)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, Response{
 				Exc: fmt.Sprintf("Failed to unsubscribe from topic: %v", err),
@@ -404,7 +397,7 @@ func removeToken(c *gin.Context) {
 			if token != fcmToken {
 				continue
 			}
-			// Нашли токен, удаляем его
+			// Found the token, remove it
 			userDeviceMap[key][userID] = append(tokens[:i], tokens[i+1:]...)
 			err := saveJSON(UserDeviceMapJSON, userDeviceMap)
 			if err != nil {
@@ -424,7 +417,7 @@ func removeToken(c *gin.Context) {
 		}
 	}
 
-	// Если токен не найден, все равно возвращаем успешный результат
+	// If token not found, still return successful result
 	c.JSON(http.StatusOK, Response{
 		Message: map[string]interface{}{
 			"success": true,
@@ -453,11 +446,16 @@ func validateNotificationParams(title, body string) error {
 	return nil
 }
 
-// applyDecorations применяет декорации к заголовку уведомления
+// applyDecorations applies decorations to the notification title based on project settings
 func applyDecorations(key, title string) string {
 	if projectDecorations, exists := decorations[key]; exists {
 		for _, decoration := range projectDecorations {
-			if matched, _ := regexp.MatchString(decoration.Pattern, title); matched {
+			matched, err := regexp.MatchString(decoration.Pattern, title)
+			if err != nil {
+				log.Printf("Error matching pattern: %v", err)
+				continue
+			}
+			if matched {
 				return strings.Replace(decoration.Template, "{title}", title, 1)
 			}
 		}
@@ -465,7 +463,7 @@ func applyDecorations(key, title string) string {
 	return title
 }
 
-// addIconToConfig добавляет иконку проекта в конфигурацию
+// addIconToConfig adds the project icon to the webpush configuration
 func addIconToConfig(key string, webpushConfig *messaging.WebpushConfig) {
 	if iconPath, exists := icons[key]; exists {
 		if webpushConfig.Data == nil {
@@ -553,40 +551,53 @@ func sendNotificationToUser(c *gin.Context) {
 	}
 
 	// Send notification to all user tokens
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	var lastError error
+	validTokens := make([]string, 0, len(tokens))
+
 	for _, token := range tokens {
 		message := &messaging.Message{
 			Token:   token,
 			Webpush: webpushConfig,
 		}
 
-		ctx := context.Background()
-		client, err := fbApp.Messaging(ctx)
+		_, err = messagingClient.Send(ctx, message)
 		if err != nil {
+			if messaging.IsUnregistered(err) || messaging.IsInvalidArgument(err) {
+				// Remove invalid token from user's device map
+				for i, t := range userDeviceMap[key][userID] {
+					if t == token {
+						userDeviceMap[key][userID] = append(userDeviceMap[key][userID][:i], userDeviceMap[key][userID][i+1:]...)
+						break
+					}
+				}
+				// Save updated device map
+				if err := saveJSON(UserDeviceMapJSON, userDeviceMap); err != nil {
+					log.Printf("Failed to save updated device map: %v", err)
+				}
+				continue // Try next token
+			}
+			// For other errors, stop sending
 			lastError = err
-			continue
+			break
 		}
-
-		_, err = client.Send(ctx, message)
-		if err != nil {
-			lastError = err
-			continue
-		}
+		validTokens = append(validTokens, token)
 	}
 
-	// Check if there were any errors during sending
-	if lastError != nil {
-		excBytes, _ := json.Marshal([]string{fmt.Sprintf("Failed to send notification: %v", lastError)})
+	// If there was an error and no valid tokens were found
+	if lastError != nil && len(validTokens) == 0 {
 		c.JSON(http.StatusInternalServerError, Response{
-			Exc: string(excBytes),
+			Exc: fmt.Sprintf("failed to send notification: %v", lastError),
 		})
 		return
 	}
 
-	// Return successful response only after all notifications are sent
+	// Return success if at least one notification was sent
 	c.JSON(http.StatusOK, Response{
 		Message: map[string]interface{}{
-			"success": true,
+			"success": len(validTokens) > 0,
 			"message": "Notification sent",
 		},
 	})
@@ -595,7 +606,12 @@ func sendNotificationToUser(c *gin.Context) {
 // applyTopicDecorations applies decorations to the notification title based on topic
 func applyTopicDecorations(topic, title string) string {
 	if decoration, exists := topicDecorations[topic]; exists {
-		if matched, _ := regexp.MatchString(decoration.Pattern, title); matched {
+		matched, err := regexp.MatchString(decoration.Pattern, title)
+		if err != nil {
+			log.Printf("Error matching pattern: %v", err)
+			return title
+		}
+		if matched {
 			return strings.Replace(decoration.Template, "{title}", title, 1)
 		}
 	}
@@ -604,7 +620,7 @@ func applyTopicDecorations(topic, title string) string {
 
 // prepareTopicWebPushConfig creates a web push notification configuration for a topic
 func prepareTopicWebPushConfig(topic, title, body, data string) (*messaging.WebpushConfig, error) {
-	// Применяем декорации к заголовку на основе топика
+	// Apply decorations to the title based on topic
 	decoratedTitle := applyTopicDecorations(topic, title)
 
 	webpushConfig := &messaging.WebpushConfig{
@@ -685,16 +701,7 @@ func sendNotificationToTopic(c *gin.Context) {
 	}
 
 	ctx := context.Background()
-	client, err := fbApp.Messaging(ctx)
-	if err != nil {
-		excBytes, _ := json.Marshal([]string{fmt.Sprintf("Failed to initialize messaging client: %v", err)})
-		c.JSON(http.StatusInternalServerError, Response{
-			Exc: string(excBytes),
-		})
-		return
-	}
-
-	_, err = client.Send(ctx, message)
+	_, err = messagingClient.Send(ctx, message)
 	if err != nil {
 		excBytes, _ := json.Marshal([]string{fmt.Sprintf("Failed to send notification: %v", err)})
 		c.JSON(http.StatusInternalServerError, Response{

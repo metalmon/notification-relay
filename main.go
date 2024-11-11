@@ -31,7 +31,7 @@ const (
 )
 
 var (
-	fbApp              *firebase.App
+	messagingClient    FirebaseMessagingClient
 	config             Config
 	userDeviceMap      = make(map[string]map[string][]string)
 	decorations        = make(map[string]map[string]Decoration)
@@ -72,6 +72,23 @@ func init() {
 	}
 }
 
+func initFirebase() error {
+	ctx := context.Background()
+	opt := option.WithCredentialsFile(serviceAccountPath)
+	app, err := firebase.NewApp(ctx, nil, opt)
+	if err != nil {
+		return fmt.Errorf("failed to initialize Firebase: %v", err)
+	}
+
+	client, err := app.Messaging(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to initialize messaging client: %v", err)
+	}
+
+	messagingClient = client
+	return nil
+}
+
 // Config represents the application configuration structure
 type Config struct {
 	VapidPublicKey string                 `json:"vapid_public_key"`
@@ -86,11 +103,7 @@ func main() {
 	}
 
 	// Initialize Firebase
-	ctx := context.Background()
-	opt := option.WithCredentialsFile(serviceAccountPath)
-	var err error
-	fbApp, err = firebase.NewApp(ctx, nil, opt)
-	if err != nil {
+	if err := initFirebase(); err != nil {
 		log.Fatalf("Failed to initialize Firebase: %v", err)
 	}
 

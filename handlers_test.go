@@ -8,8 +8,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/your-username/notification-relay/mocks"
+
 	"github.com/stretchr/testify/assert"
+
+	"firebase.google.com/go/v4/messaging"
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -226,6 +231,228 @@ func TestAPIBasicAuth(t *testing.T) {
 			router.ServeHTTP(w, req)
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
+		})
+	}
+}
+
+func TestSendNotificationToUser(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	mockClient := &mocks.MockFirebaseMessagingClient{}
+	messagingClient = mockClient
+
+	// Set up test user and device
+	key := "test_project_test_site"
+	userID := "test_user"
+	token := "test_token"
+	userDeviceMap[key] = map[string][]string{
+		userID: {token},
+	}
+
+	tests := []struct {
+		name           string
+		setupMock      func()
+		queryParams    map[string]string
+		expectedStatus int
+		expectedBody   map[string]interface{}
+	}{
+		{
+			name: "successful notification",
+			setupMock: func() {
+				mockClient.On("Send", mock.Anything, mock.MatchedBy(func(msg *messaging.Message) bool {
+					return msg.Token == token
+				})).Return("message_id", nil)
+			},
+			queryParams: map[string]string{
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"user_id":      userID,
+				"title":        "Test Title",
+				"body":         "Test Body",
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": map[string]interface{}{
+					"success": true,
+					"message": "Notification sent",
+				},
+			},
+		},
+		{
+			name:      "user not subscribed",
+			setupMock: func() {},
+			queryParams: map[string]string{
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"user_id":      "nonexistent_user",
+				"title":        "Test Title",
+				"body":         "Test Body",
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": map[string]interface{}{
+					"success": false,
+					"message": "user nonexistent_user not subscribed to push notifications",
+				},
+			},
+		},
+		{
+			name:      "missing required fields",
+			setupMock: func() {},
+			queryParams: map[string]string{
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"user_id":      userID,
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": map[string]interface{}{
+					"success": false,
+					"message": "title is required",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := createTestContext(w)
+
+			// Setup mock
+			tt.setupMock()
+
+			// Setup request with query parameters
+			req, err := http.NewRequest(http.MethodPost, "/send", nil)
+			require.NoError(t, err)
+			q := req.URL.Query()
+			for k, v := range tt.queryParams {
+				q.Add(k, v)
+			}
+			req.URL.RawQuery = q.Encode()
+			c.Request = req
+
+			sendNotificationToUser(c)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			var response map[string]interface{}
+			err = json.NewDecoder(w.Body).Decode(&response)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedBody, response)
+
+			mockClient.AssertExpectations(t)
+		})
+	}
+}
+
+func TestValidateNotificationParams(t *testing.T) {
+	tests := []struct {
+		name        string
+		title       string
+		body        string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "valid params",
+			title:       "Test Title",
+			body:        "Test Body",
+			expectError: false,
+		},
+		{
+			name:        "missing title",
+			title:       "",
+			body:        "Test Body",
+			expectError: true,
+			errorMsg:    "title is required",
+		},
+		{
+			name:        "missing body",
+			title:       "Test Title",
+			body:        "",
+			expectError: true,
+			errorMsg:    "body is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateNotificationParams(tt.title, tt.body)
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Equal(t, tt.errorMsg, err.Error())
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestPrepareWebPushConfig(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	tests := []struct {
+		name           string
+		key            string
+		title          string
+		body           string
+		data           string
+		setupData      func()
+		expectError    bool
+		validateConfig func(*testing.T, *messaging.WebpushConfig)
+	}{
+		{
+			name:  "basic config",
+			key:   "test_project",
+			title: "Test Title",
+			body:  "Test Body",
+			data:  "",
+			validateConfig: func(t *testing.T, config *messaging.WebpushConfig) {
+				assert.Equal(t, "Test Title", config.Notification.Title)
+				assert.Equal(t, "Test Body", config.Notification.Body)
+			},
+		},
+		{
+			name:  "with click action",
+			key:   "test_project",
+			title: "Test Title",
+			body:  "Test Body",
+			data:  `{"click_action": "https://example.com"}`,
+			validateConfig: func(t *testing.T, config *messaging.WebpushConfig) {
+				assert.Equal(t, "https://example.com", config.FCMOptions.Link)
+			},
+		},
+		{
+			name:        "invalid data json",
+			key:         "test_project",
+			title:       "Test Title",
+			body:        "Test Body",
+			data:        "invalid json",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.setupData != nil {
+				tt.setupData()
+			}
+
+			config, err := prepareWebPushConfig(tt.key, tt.title, tt.body, tt.data)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.NotNil(t, config)
+			if tt.validateConfig != nil {
+				tt.validateConfig(t, config)
+			}
 		})
 	}
 }
