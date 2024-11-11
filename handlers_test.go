@@ -90,7 +90,9 @@ func TestGetCredential(t *testing.T) {
 	// Create test server to simulate webhook endpoint
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/valid-webhook" {
-			w.Write([]byte("valid-token"))
+			if _, err := w.Write([]byte("valid-token")); err != nil {
+				t.Fatal(err)
+			}
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -306,7 +308,7 @@ func TestSendNotificationToUser(t *testing.T) {
 			tt.setupMock()
 
 			// Setup request with query parameters
-			req, err := http.NewRequest(http.MethodPost, "/send", nil)
+			req, err := http.NewRequest(http.MethodPost, "/send", http.NoBody)
 			require.NoError(t, err)
 			q := req.URL.Query()
 			for k, v := range tt.queryParams {
@@ -549,7 +551,7 @@ func TestSubscribeToTopic(t *testing.T) {
 			tt.setupMock()
 
 			// Setup request with query parameters
-			req, err := http.NewRequest(http.MethodPost, "/subscribe", nil)
+			req, err := http.NewRequest(http.MethodPost, "/subscribe", http.NoBody)
 			require.NoError(t, err)
 			q := req.URL.Query()
 			for k, v := range tt.queryParams {
@@ -667,7 +669,7 @@ func TestUnsubscribeFromTopic(t *testing.T) {
 			tt.setupMock()
 
 			// Setup request with query parameters
-			req, err := http.NewRequest(http.MethodPost, "/unsubscribe", nil)
+			req, err := http.NewRequest(http.MethodPost, "/unsubscribe", http.NoBody)
 			require.NoError(t, err)
 			q := req.URL.Query()
 			for k, v := range tt.queryParams {
@@ -881,7 +883,7 @@ func TestAddToken(t *testing.T) {
 			tt.setupUserMap()
 
 			// Setup request with query parameters
-			req, err := http.NewRequest(http.MethodPost, "/add-token", nil)
+			req, err := http.NewRequest(http.MethodPost, "/add-token", http.NoBody)
 			require.NoError(t, err)
 			q := req.URL.Query()
 			for k, v := range tt.queryParams {
@@ -978,7 +980,7 @@ func TestRemoveToken(t *testing.T) {
 			tt.setupUserMap()
 
 			// Setup request with query parameters
-			req, err := http.NewRequest(http.MethodPost, "/remove-token", nil)
+			req, err := http.NewRequest(http.MethodPost, "/remove-token", http.NoBody)
 			require.NoError(t, err)
 			q := req.URL.Query()
 			for k, v := range tt.queryParams {
@@ -1223,7 +1225,7 @@ func TestSendNotificationToTopic(t *testing.T) {
 			tt.setupMock()
 
 			// Setup request with query parameters
-			req, err := http.NewRequest(http.MethodPost, "/send-topic", nil)
+			req, err := http.NewRequest(http.MethodPost, "/send-topic", http.NoBody)
 			require.NoError(t, err)
 			q := req.URL.Query()
 			for k, v := range tt.queryParams {
@@ -1379,7 +1381,7 @@ func TestAPIBasicAuth(t *testing.T) {
 			})
 
 			// Create request
-			req, err := http.NewRequest(http.MethodGet, "/test", nil)
+			req, err := http.NewRequest(http.MethodGet, "/test", http.NoBody)
 			require.NoError(t, err)
 
 			// Setup auth header

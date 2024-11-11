@@ -73,55 +73,7 @@ func init() {
 	}
 }
 
-func initFirebase() error {
-	// Check if service account path exists in environment
-	serviceAccountPath = os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
-	if serviceAccountPath == "" {
-		// Default paths in order of preference
-		paths := []string{
-			"./service-account.json",
-			"/etc/notification-relay/service-account.json",
-		}
-		for _, path := range paths {
-			if _, err := os.Stat(path); err == nil {
-				serviceAccountPath = path
-				break
-			}
-		}
-	}
-
-	// Check if we found a service account file
-	if serviceAccountPath == "" {
-		return fmt.Errorf("failed to initialize Firebase: no service account file found")
-	}
-
-	// Check if service account file exists
-	if _, err := os.Stat(serviceAccountPath); err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("failed to initialize Firebase: service account file not found")
-		}
-		return fmt.Errorf("failed to initialize Firebase: error accessing service account file: %v", err)
-	}
-
-	// Read service account file
-	content, err := os.ReadFile(serviceAccountPath)
-	if err != nil {
-		return fmt.Errorf("failed to initialize Firebase: could not read service account file: %v", err)
-	}
-
-	// Verify it's valid JSON
-	var jsonContent map[string]interface{}
-	if err := json.Unmarshal(content, &jsonContent); err != nil {
-		return fmt.Errorf("failed to initialize Firebase: invalid service account JSON: %v", err)
-	}
-
-	// Check for web configuration
-	webConfig, ok := jsonContent["web"].(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("failed to initialize Firebase: missing web configuration")
-	}
-
-	// Verify required fields
+func validateWebConfig(webConfig map[string]interface{}) error {
 	requiredFields := []string{
 		"client_id",
 		"project_id",
@@ -133,21 +85,72 @@ func initFirebase() error {
 
 	for _, field := range requiredFields {
 		if _, ok := webConfig[field].(string); !ok {
-			return fmt.Errorf("failed to initialize Firebase: missing or invalid required field in web config: %s", field)
+			return fmt.Errorf("missing or invalid required field in web config: %s", field)
 		}
 	}
 
-	// Optional fields validation
+	return validateOptionalArrays(webConfig)
+}
+
+func validateOptionalArrays(webConfig map[string]interface{}) error {
 	if redirectURIs, ok := webConfig["redirect_uris"].([]interface{}); ok {
 		if len(redirectURIs) == 0 {
-			return fmt.Errorf("failed to initialize Firebase: redirect_uris array is empty")
+			return fmt.Errorf("redirect_uris array is empty")
 		}
 	}
 
 	if origins, ok := webConfig["javascript_origins"].([]interface{}); ok {
 		if len(origins) == 0 {
-			return fmt.Errorf("failed to initialize Firebase: javascript_origins array is empty")
+			return fmt.Errorf("javascript_origins array is empty")
 		}
+	}
+
+	return nil
+}
+
+func initFirebase() error {
+	if serviceAccountPath == "" {
+		return fmt.Errorf("failed to initialize Firebase: no service account file found")
+	}
+
+	content, err := readAndValidateServiceAccount()
+	if err != nil {
+		return err
+	}
+
+	return initializeFirebaseApp(content)
+}
+
+func readAndValidateServiceAccount() ([]byte, error) {
+	if _, err := os.Stat(serviceAccountPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to initialize Firebase: service account file not found")
+		}
+		return nil, fmt.Errorf("failed to initialize Firebase: error accessing service account file: %v", err)
+	}
+
+	// #nosec G304 -- serviceAccountPath is validated before use
+	content, err := os.ReadFile(serviceAccountPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Firebase: could not read service account file: %v", err)
+	}
+
+	return content, nil
+}
+
+func initializeFirebaseApp(content []byte) error {
+	var jsonContent map[string]interface{}
+	if err := json.Unmarshal(content, &jsonContent); err != nil {
+		return fmt.Errorf("failed to initialize Firebase: invalid service account JSON: %v", err)
+	}
+
+	webConfig, ok := jsonContent["web"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("failed to initialize Firebase: missing web configuration")
+	}
+
+	if err := validateWebConfig(webConfig); err != nil {
+		return fmt.Errorf("failed to initialize Firebase: %v", err)
 	}
 
 	ctx := context.Background()

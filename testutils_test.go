@@ -13,8 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	defaultFileMode = 0o644
+	defaultDirMode  = 0o755
+)
+
 // setupTestEnvironment sets up a test environment with temporary config files
-func setupTestEnvironment(t *testing.T) (string, func()) {
+func setupTestEnvironment(t *testing.T) (tmpDir string, cleanup func()) {
 	// Create temp directory for test configs
 	tmpDir, err := os.MkdirTemp("", "notification-relay-test-*")
 	require.NoError(t, err)
@@ -52,10 +57,12 @@ func setupTestEnvironment(t *testing.T) (string, func()) {
 	// Initialize test environment
 	gin.SetMode(gin.TestMode)
 
-	cleanup := func() {
+	cleanup = func() {
 		configPath = origConfigPath
 		serviceAccountPath = origServiceAccountPath
-		os.RemoveAll(tmpDir)
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Errorf("Failed to cleanup test directory: %v", err)
+		}
 	}
 
 	return tmpDir, cleanup
@@ -63,13 +70,13 @@ func setupTestEnvironment(t *testing.T) (string, func()) {
 
 // writeTestJSON writes test data to a JSON file
 func writeTestJSON(t *testing.T, path string, data interface{}) {
-	err := os.MkdirAll(filepath.Dir(path), 0755)
+	err := os.MkdirAll(filepath.Dir(path), defaultDirMode)
 	require.NoError(t, err)
 
 	file, err := json.MarshalIndent(data, "", "  ")
 	require.NoError(t, err)
 
-	err = os.WriteFile(path, file, 0644)
+	err = os.WriteFile(path, file, defaultFileMode)
 	require.NoError(t, err)
 }
 

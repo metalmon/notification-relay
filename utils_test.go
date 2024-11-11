@@ -59,7 +59,7 @@ func TestLoadJSON(t *testing.T) {
 		{
 			name: "valid json file",
 			setupFile: func(path string) error {
-				return os.WriteFile(path, []byte(`{"test": "value"}`), 0644)
+				return os.WriteFile(path, []byte(`{"test": "value"}`), defaultFileMode)
 			},
 			filename:    "test.json",
 			expectError: false,
@@ -67,7 +67,7 @@ func TestLoadJSON(t *testing.T) {
 		{
 			name: "invalid json content",
 			setupFile: func(path string) error {
-				return os.WriteFile(path, []byte(`invalid json`), 0644)
+				return os.WriteFile(path, []byte(`invalid json`), defaultFileMode)
 			},
 			filename:    "test.json",
 			expectError: true,
@@ -75,7 +75,7 @@ func TestLoadJSON(t *testing.T) {
 		{
 			name: "non-json extension",
 			setupFile: func(path string) error {
-				return os.WriteFile(path, []byte(`{"test": "value"}`), 0644)
+				return os.WriteFile(path, []byte(`{"test": "value"}`), defaultFileMode)
 			},
 			filename:    "test.txt",
 			expectError: true,

@@ -29,6 +29,7 @@ func TestInitFirebase(t *testing.T) {
 		{
 			name: "valid service account but invalid Firebase config",
 			setupEnv: func() {
+				serviceAccountPath = filepath.Join(tmpDir, "service-account.json")
 				content := `{
 					"web": {
 						"client_id": "377489555157-test.apps.googleusercontent.com",
@@ -41,9 +42,8 @@ func TestInitFirebase(t *testing.T) {
 						"javascript_origins": ["https://example.com"]
 					}
 				}`
-				err := os.WriteFile(filepath.Join(tmpDir, "service-account.json"), []byte(content), 0644)
+				err := os.WriteFile(serviceAccountPath, []byte(content), defaultFileMode)
 				require.NoError(t, err)
-				os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", filepath.Join(tmpDir, "service-account.json"))
 			},
 			expectError: true,
 			errorMsg:    "failed to initialize messaging client",
@@ -51,6 +51,7 @@ func TestInitFirebase(t *testing.T) {
 		{
 			name: "valid service account but fails Firebase init",
 			setupEnv: func() {
+				serviceAccountPath = filepath.Join(tmpDir, "service-account.json")
 				content := `{
 					"web": {
 						"client_id": "377489555157-test.apps.googleusercontent.com",
@@ -63,9 +64,8 @@ func TestInitFirebase(t *testing.T) {
 						"javascript_origins": ["https://example.com"]
 					}
 				}`
-				err := os.WriteFile(filepath.Join(tmpDir, "service-account.json"), []byte(content), 0644)
+				err := os.WriteFile(serviceAccountPath, []byte(content), defaultFileMode)
 				require.NoError(t, err)
-				os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", filepath.Join(tmpDir, "service-account.json"))
 			},
 			expectError: true,
 			errorMsg:    "failed to initialize messaging client: project ID is required",
@@ -73,13 +73,14 @@ func TestInitFirebase(t *testing.T) {
 		{
 			name: "missing web config",
 			setupEnv: func() {
+				serviceAccountPath = filepath.Join(tmpDir, "service-account.json")
+				// #nosec G101 -- test credentials only
 				content := `{
 					"type": "service_account",
 					"project_id": "test-project"
 				}`
-				err := os.WriteFile(filepath.Join(tmpDir, "service-account.json"), []byte(content), 0644)
+				err := os.WriteFile(serviceAccountPath, []byte(content), defaultFileMode)
 				require.NoError(t, err)
-				os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", filepath.Join(tmpDir, "service-account.json"))
 			},
 			expectError: true,
 			errorMsg:    "failed to initialize Firebase: missing web configuration",
@@ -87,15 +88,15 @@ func TestInitFirebase(t *testing.T) {
 		{
 			name: "missing required field",
 			setupEnv: func() {
+				serviceAccountPath = filepath.Join(tmpDir, "service-account.json")
 				content := `{
 					"web": {
 						"project_id": "test-project",
 						"auth_uri": "https://accounts.google.com/o/oauth2/auth"
 					}
 				}`
-				err := os.WriteFile(filepath.Join(tmpDir, "service-account.json"), []byte(content), 0644)
+				err := os.WriteFile(serviceAccountPath, []byte(content), defaultFileMode)
 				require.NoError(t, err)
-				os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", filepath.Join(tmpDir, "service-account.json"))
 			},
 			expectError: true,
 			errorMsg:    "failed to initialize Firebase: missing or invalid required field in web config: client_id",
@@ -103,9 +104,9 @@ func TestInitFirebase(t *testing.T) {
 		{
 			name: "invalid service account json",
 			setupEnv: func() {
-				err := os.WriteFile(filepath.Join(tmpDir, "service-account.json"), []byte("invalid json"), 0644)
+				serviceAccountPath = filepath.Join(tmpDir, "service-account.json")
+				err := os.WriteFile(serviceAccountPath, []byte("invalid json"), defaultFileMode)
 				require.NoError(t, err)
-				os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", filepath.Join(tmpDir, "service-account.json"))
 			},
 			expectError: true,
 			errorMsg:    "failed to initialize Firebase: invalid service account JSON",
@@ -113,9 +114,7 @@ func TestInitFirebase(t *testing.T) {
 		{
 			name: "missing service account file",
 			setupEnv: func() {
-				nonexistentPath := filepath.Join(tmpDir, "nonexistent.json")
-				os.Remove(nonexistentPath)
-				os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", nonexistentPath)
+				serviceAccountPath = filepath.Join(tmpDir, "nonexistent.json")
 			},
 			expectError: true,
 			errorMsg:    "failed to initialize Firebase: service account file not found",
@@ -123,7 +122,6 @@ func TestInitFirebase(t *testing.T) {
 		{
 			name: "empty credentials path",
 			setupEnv: func() {
-				os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")
 				serviceAccountPath = ""
 			},
 			expectError: true,
@@ -134,7 +132,6 @@ func TestInitFirebase(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Reset environment and global variables before each test
-			os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")
 			serviceAccountPath = ""
 			messagingClient = nil
 
@@ -296,7 +293,9 @@ func TestInitCredentials(t *testing.T) {
 			setupFile: func() {
 				// Don't create the file - it should be created
 				credPath := filepath.Join(tmpDir, CredentialsJSON)
-				os.Remove(credPath)
+				if err := os.Remove(credPath); err != nil && !os.IsNotExist(err) {
+					t.Fatal(err)
+				}
 			},
 			validateCreds: func(t *testing.T) {
 				assert.Empty(t, credentials)
@@ -393,10 +392,18 @@ func TestLoadDataFiles(t *testing.T) {
 			name: "missing files create defaults",
 			setupFiles: func() {
 				// Remove all data files
-				os.Remove(filepath.Join(tmpDir, UserDeviceMapJSON))
-				os.Remove(filepath.Join(tmpDir, DecorationJSON))
-				os.Remove(filepath.Join(tmpDir, TopicDecorationJSON))
-				os.Remove(filepath.Join(tmpDir, IconsJSON))
+				if err := os.Remove(filepath.Join(tmpDir, UserDeviceMapJSON)); err != nil && !os.IsNotExist(err) {
+					t.Fatal(err)
+				}
+				if err := os.Remove(filepath.Join(tmpDir, DecorationJSON)); err != nil && !os.IsNotExist(err) {
+					t.Fatal(err)
+				}
+				if err := os.Remove(filepath.Join(tmpDir, TopicDecorationJSON)); err != nil && !os.IsNotExist(err) {
+					t.Fatal(err)
+				}
+				if err := os.Remove(filepath.Join(tmpDir, IconsJSON)); err != nil && !os.IsNotExist(err) {
+					t.Fatal(err)
+				}
 
 				// Ensure files are in allowedFiles
 				allowedFiles[UserDeviceMapJSON] = true
@@ -471,7 +478,9 @@ func TestMainConfigLoading(t *testing.T) {
 		{
 			name: "missing config file",
 			setupConfig: func() {
-				os.Remove(filepath.Join(tmpDir, ConfigJSON))
+				if err := os.Remove(filepath.Join(tmpDir, ConfigJSON)); err != nil && !os.IsNotExist(err) {
+					t.Fatal(err)
+				}
 				allowedFiles[ConfigJSON] = true
 			},
 			expectError: true,
@@ -479,7 +488,7 @@ func TestMainConfigLoading(t *testing.T) {
 		{
 			name: "invalid config json",
 			setupConfig: func() {
-				err := os.WriteFile(filepath.Join(tmpDir, ConfigJSON), []byte("invalid json"), 0644)
+				err := os.WriteFile(filepath.Join(tmpDir, ConfigJSON), []byte("invalid json"), defaultFileMode)
 				require.NoError(t, err)
 				allowedFiles[ConfigJSON] = true
 			},
