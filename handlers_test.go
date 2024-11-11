@@ -456,3 +456,355 @@ func TestPrepareWebPushConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestSubscribeToTopic(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	mockClient := &mocks.MockFirebaseMessagingClient{}
+	messagingClient = mockClient
+
+	// Set up test user and device
+	key := "test_project_test_site"
+	userID := "test_user"
+	token := "test_token"
+	userDeviceMap[key] = map[string][]string{
+		userID: {token},
+	}
+
+	tests := []struct {
+		name           string
+		setupMock      func()
+		queryParams    map[string]string
+		expectedStatus int
+		expectedBody   map[string]interface{}
+	}{
+		{
+			name: "successful subscription",
+			setupMock: func() {
+				mockClient.On("SubscribeToTopic",
+					mock.Anything,
+					[]string{token},
+					"test_topic",
+				).Return(&messaging.TopicManagementResponse{}, nil)
+			},
+			queryParams: map[string]string{
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"user_id":      userID,
+				"topic_name":   "test_topic",
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": map[string]interface{}{
+					"success": true,
+					"message": "User subscribed",
+				},
+			},
+		},
+		{
+			name:      "missing topic name",
+			setupMock: func() {},
+			queryParams: map[string]string{
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"user_id":      userID,
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": map[string]interface{}{
+					"success": false,
+					"message": "topic_name is required",
+				},
+			},
+		},
+		{
+			name:      "user not subscribed",
+			setupMock: func() {},
+			queryParams: map[string]string{
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"user_id":      "nonexistent_user",
+				"topic_name":   "test_topic",
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": map[string]interface{}{
+					"success": false,
+					"message": "nonexistent_user not subscribed to push notifications",
+				},
+			},
+		},
+		{
+			name: "firebase client error",
+			setupMock: func() {
+				mockClient.On("SubscribeToTopic",
+					mock.Anything,
+					[]string{token},
+					"test_topic",
+				).Return(&messaging.TopicManagementResponse{}, fmt.Errorf("firebase error"))
+			},
+			queryParams: map[string]string{
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"user_id":      userID,
+				"topic_name":   "test_topic",
+			},
+			expectedStatus: http.StatusInternalServerError,
+			expectedBody: map[string]interface{}{
+				"exc": "Failed to subscribe to topic: firebase error",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := createTestContext(w)
+
+			// Setup mock
+			mockClient.ExpectedCalls = nil // Clear previous mock expectations
+			tt.setupMock()
+
+			// Setup request with query parameters
+			req, err := http.NewRequest(http.MethodPost, "/subscribe", nil)
+			require.NoError(t, err)
+			q := req.URL.Query()
+			for k, v := range tt.queryParams {
+				q.Add(k, v)
+			}
+			req.URL.RawQuery = q.Encode()
+			c.Request = req
+
+			subscribeToTopic(c)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			var response map[string]interface{}
+			err = json.NewDecoder(w.Body).Decode(&response)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedBody, response)
+
+			mockClient.AssertExpectations(t)
+		})
+	}
+}
+
+func TestUnsubscribeFromTopic(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	mockClient := &mocks.MockFirebaseMessagingClient{}
+	messagingClient = mockClient
+
+	// Set up test user and device
+	key := "test_project_test_site"
+	userID := "test_user"
+	token := "test_token"
+	userDeviceMap[key] = map[string][]string{
+		userID: {token},
+	}
+
+	tests := []struct {
+		name           string
+		setupMock      func()
+		queryParams    map[string]string
+		expectedStatus int
+		expectedBody   map[string]interface{}
+	}{
+		{
+			name: "successful unsubscription",
+			setupMock: func() {
+				mockClient.On("UnsubscribeFromTopic",
+					mock.Anything,
+					[]string{token},
+					"test_topic",
+				).Return(&messaging.TopicManagementResponse{}, nil)
+			},
+			queryParams: map[string]string{
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"user_id":      userID,
+				"topic_name":   "test_topic",
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": map[string]interface{}{
+					"success": true,
+					"message": "User test_user unsubscribed from test_topic topic",
+				},
+			},
+		},
+		{
+			name: "missing topic name",
+			setupMock: func() {
+				// No mock setup needed - function should return early
+			},
+			queryParams: map[string]string{
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"user_id":      userID,
+				// topic_name intentionally omitted
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": map[string]interface{}{
+					"success": false,
+					"message": "topic_name is required",
+				},
+			},
+		},
+		{
+			name: "user not subscribed",
+			setupMock: func() {
+				// No mock setup needed - function should return early
+			},
+			queryParams: map[string]string{
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"user_id":      "nonexistent_user",
+				"topic_name":   "test_topic",
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": map[string]interface{}{
+					"success": false,
+					"message": "nonexistent_user not subscribed to push notifications",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := createTestContext(w)
+
+			// Setup mock
+			mockClient.ExpectedCalls = nil // Clear previous mock expectations
+			tt.setupMock()
+
+			// Setup request with query parameters
+			req, err := http.NewRequest(http.MethodPost, "/unsubscribe", nil)
+			require.NoError(t, err)
+			q := req.URL.Query()
+			for k, v := range tt.queryParams {
+				q.Add(k, v)
+			}
+			req.URL.RawQuery = q.Encode()
+			c.Request = req
+
+			unsubscribeFromTopic(c)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			var response map[string]interface{}
+			err = json.NewDecoder(w.Body).Decode(&response)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedBody, response)
+
+			mockClient.AssertExpectations(t)
+		})
+	}
+}
+
+func TestApplyDecorations(t *testing.T) {
+	tests := []struct {
+		name             string
+		key              string
+		title            string
+		setupDecorations func()
+		expected         string
+	}{
+		{
+			name:  "no decorations",
+			key:   "test_project",
+			title: "Test Title",
+			setupDecorations: func() {
+				decorations = make(map[string]map[string]Decoration)
+			},
+			expected: "Test Title",
+		},
+		{
+			name:  "matching decoration",
+			key:   "test_project",
+			title: "Alert: Test Message",
+			setupDecorations: func() {
+				decorations = map[string]map[string]Decoration{
+					"test_project": {
+						"alert": {
+							Pattern:  "^Alert:",
+							Template: "🚨 {title}",
+						},
+					},
+				}
+			},
+			expected: "🚨 Alert: Test Message",
+		},
+		{
+			name:  "non-matching decoration",
+			key:   "test_project",
+			title: "Normal Message",
+			setupDecorations: func() {
+				decorations = map[string]map[string]Decoration{
+					"test_project": {
+						"alert": {
+							Pattern:  "^Alert:",
+							Template: "🚨 {title}",
+						},
+					},
+				}
+			},
+			expected: "Normal Message",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setupDecorations()
+			result := applyDecorations(tt.key, tt.title)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestAddIconToConfig(t *testing.T) {
+	tests := []struct {
+		name           string
+		key            string
+		setupIcons     func()
+		validateConfig func(*testing.T, *messaging.WebpushConfig)
+	}{
+		{
+			name: "add icon when available",
+			key:  "test_project",
+			setupIcons: func() {
+				icons = map[string]string{
+					"test_project": "/path/to/icon.png",
+				}
+			},
+			validateConfig: func(t *testing.T, config *messaging.WebpushConfig) {
+				assert.Equal(t, "/path/to/icon.png", config.Data["icon"])
+			},
+		},
+		{
+			name: "no icon available",
+			key:  "test_project",
+			setupIcons: func() {
+				icons = make(map[string]string)
+			},
+			validateConfig: func(t *testing.T, config *messaging.WebpushConfig) {
+				assert.Nil(t, config.Data)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setupIcons()
+			config := &messaging.WebpushConfig{}
+			addIconToConfig(tt.key, config)
+			tt.validateConfig(t, config)
+		})
+	}
+}

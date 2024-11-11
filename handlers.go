@@ -238,6 +238,17 @@ func subscribeToTopic(c *gin.Context) {
 	userID := c.Query("user_id")
 	topicName := c.Query("topic_name")
 
+	// Check if topic name is empty first
+	if topicName == "" {
+		c.JSON(http.StatusOK, Response{
+			Message: map[string]interface{}{
+				"success": false,
+				"message": "topic_name is required",
+			},
+		})
+		return
+	}
+
 	if tokens, exists := userDeviceMap[key][userID]; exists && len(tokens) > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -259,7 +270,6 @@ func subscribeToTopic(c *gin.Context) {
 		return
 	}
 
-	// Даже ошибка валидации возвращается с 200
 	c.JSON(http.StatusOK, Response{
 		Message: map[string]interface{}{
 			"success": false,
