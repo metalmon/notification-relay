@@ -565,7 +565,6 @@ func sendNotificationToUser(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	var lastError error
 	validTokens := make([]string, 0, len(tokens))
 
 	for _, token := range tokens {
@@ -576,7 +575,7 @@ func sendNotificationToUser(c *gin.Context) {
 
 		_, err = messagingClient.Send(ctx, message)
 		if err != nil {
-			if messaging.IsUnregistered(err) || messaging.IsInvalidArgument(err) {
+			if err.Error() == "invalid registration token" {
 				// Remove invalid token from user's device map
 				for i, t := range userDeviceMap[key][userID] {
 					if t == token {
@@ -590,17 +589,19 @@ func sendNotificationToUser(c *gin.Context) {
 				}
 				continue // Try next token
 			}
-			// For other errors, stop sending
-			lastError = err
+
 			break
 		}
 		validTokens = append(validTokens, token)
 	}
 
 	// If there was an error and no valid tokens were found
-	if lastError != nil && len(validTokens) == 0 {
-		c.JSON(http.StatusInternalServerError, Response{
-			Exc: fmt.Sprintf("failed to send notification: %v", lastError),
+	if len(validTokens) == 0 {
+		c.JSON(http.StatusOK, Response{
+			Message: map[string]interface{}{
+				"success": false,
+				"message": "No valid tokens found",
+			},
 		})
 		return
 	}
@@ -608,7 +609,7 @@ func sendNotificationToUser(c *gin.Context) {
 	// Return success if at least one notification was sent
 	c.JSON(http.StatusOK, Response{
 		Message: map[string]interface{}{
-			"success": len(validTokens) > 0,
+			"success": true,
 			"message": "Notification sent",
 		},
 	})

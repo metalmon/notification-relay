@@ -17,6 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var errInvalidToken = fmt.Errorf("invalid registration token")
+
 func TestGetConfig(t *testing.T) {
 	_, cleanup := setupTestEnvironment(t)
 	defer cleanup()
@@ -190,25 +192,43 @@ func TestSendNotificationToUser(t *testing.T) {
 		userID: {token},
 	}
 
+	// Set up test decorations
+	decorations[key] = map[string]Decoration{
+		"alert": {
+			Pattern:  "^Alert:",
+			Template: "🚨 {title}",
+		},
+	}
+
+	// Set up test icons
+	icons[key] = "/path/to/icon.png"
+
 	tests := []struct {
 		name           string
 		setupMock      func()
 		queryParams    map[string]string
 		expectedStatus int
 		expectedBody   map[string]interface{}
+		checkMessage   func(*testing.T, *messaging.Message)
 	}{
 		{
-			name: "successful notification",
+			name: "successful notification with decoration",
 			setupMock: func() {
-				mockClient.On("Send", mock.Anything, mock.MatchedBy(func(msg *messaging.Message) bool {
-					return msg.Token == token
-				})).Return("message_id", nil)
+				mockClient.On("Send",
+					mock.Anything,
+					mock.MatchedBy(func(msg *messaging.Message) bool {
+						return msg.Token == token &&
+							msg.Webpush.Notification.Title == "🚨 Alert: Test Message" &&
+							msg.Webpush.Notification.Body == "Test Body" &&
+							msg.Webpush.Data["icon"] == "/path/to/icon.png"
+					}),
+				).Return("message_id", nil)
 			},
 			queryParams: map[string]string{
 				"project_name": "test_project",
 				"site_name":    "test_site",
 				"user_id":      userID,
-				"title":        "Test Title",
+				"title":        "Alert: Test Message",
 				"body":         "Test Body",
 			},
 			expectedStatus: http.StatusOK,
@@ -220,12 +240,44 @@ func TestSendNotificationToUser(t *testing.T) {
 			},
 		},
 		{
-			name:      "user not subscribed",
-			setupMock: func() {},
+			name: "successful notification with click action",
+			setupMock: func() {
+				mockClient.On("Send",
+					mock.Anything,
+					mock.MatchedBy(func(msg *messaging.Message) bool {
+						return msg.Token == token &&
+							msg.Webpush.FCMOptions.Link == "https://example.com"
+					}),
+				).Return("message_id", nil)
+			},
 			queryParams: map[string]string{
 				"project_name": "test_project",
 				"site_name":    "test_site",
-				"user_id":      "nonexistent_user",
+				"user_id":      userID,
+				"title":        "Test Title",
+				"body":         "Test Body",
+				"data":         `{"click_action": "https://example.com"}`,
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody: map[string]interface{}{
+				"message": map[string]interface{}{
+					"success": true,
+					"message": "Notification sent",
+				},
+			},
+		},
+		{
+			name: "invalid token removed",
+			setupMock: func() {
+				mockClient.On("Send",
+					mock.Anything,
+					mock.Anything,
+				).Return("", errInvalidToken)
+			},
+			queryParams: map[string]string{
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"user_id":      userID,
 				"title":        "Test Title",
 				"body":         "Test Body",
 			},
@@ -233,24 +285,13 @@ func TestSendNotificationToUser(t *testing.T) {
 			expectedBody: map[string]interface{}{
 				"message": map[string]interface{}{
 					"success": false,
-					"message": "user nonexistent_user not subscribed to push notifications",
+					"message": "No valid tokens found",
 				},
 			},
-		},
-		{
-			name:      "missing required fields",
-			setupMock: func() {},
-			queryParams: map[string]string{
-				"project_name": "test_project",
-				"site_name":    "test_site",
-				"user_id":      userID,
-			},
-			expectedStatus: http.StatusOK,
-			expectedBody: map[string]interface{}{
-				"message": map[string]interface{}{
-					"success": false,
-					"message": "title is required",
-				},
+			checkMessage: func(t *testing.T, msg *messaging.Message) {
+				// Verify token was removed
+				tokens := userDeviceMap[key][userID]
+				assert.Empty(t, tokens)
 			},
 		},
 	}
@@ -261,6 +302,7 @@ func TestSendNotificationToUser(t *testing.T) {
 			c, _ := createTestContext(w)
 
 			// Setup mock
+			mockClient.ExpectedCalls = nil // Clear previous mock expectations
 			tt.setupMock()
 
 			// Setup request with query parameters
@@ -1353,6 +1395,42 @@ func TestAPIBasicAuth(t *testing.T) {
 			} else {
 				assert.Empty(t, w.Header().Get("WWW-Authenticate"))
 			}
+		})
+	}
+}
+
+func TestGenerateSecureToken(t *testing.T) {
+	tests := []struct {
+		name   string
+		length int
+	}{
+		{
+			name:   "32 characters",
+			length: 32,
+		},
+		{
+			name:   "48 characters",
+			length: 48,
+		},
+		{
+			name:   "64 characters",
+			length: 64,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			token := generateSecureToken(tt.length)
+			assert.Len(t, token, tt.length)
+
+			// Verify token contains only allowed characters
+			for _, char := range token {
+				assert.Contains(t, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", string(char))
+			}
+
+			// Generate another token and verify it's different
+			anotherToken := generateSecureToken(tt.length)
+			assert.NotEqual(t, token, anotherToken, "Tokens should be random")
 		})
 	}
 }

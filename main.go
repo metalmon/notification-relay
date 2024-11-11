@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -73,6 +74,55 @@ func init() {
 }
 
 func initFirebase() error {
+	// Check if service account path exists in environment
+	serviceAccountPath = os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
+	if serviceAccountPath == "" {
+		// Default paths in order of preference
+		paths := []string{
+			"./service-account.json",
+			"/etc/notification-relay/service-account.json",
+		}
+		for _, path := range paths {
+			if _, err := os.Stat(path); err == nil {
+				serviceAccountPath = path
+				break
+			}
+		}
+	}
+
+	// Check if we found a service account file
+	if serviceAccountPath == "" {
+		return fmt.Errorf("failed to initialize Firebase: no service account file found")
+	}
+
+	// Check if service account file exists
+	if _, err := os.Stat(serviceAccountPath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("failed to initialize Firebase: service account file not found")
+		}
+		return fmt.Errorf("failed to initialize Firebase: error accessing service account file: %v", err)
+	}
+
+	// Read service account file
+	content, err := os.ReadFile(serviceAccountPath)
+	if err != nil {
+		return fmt.Errorf("failed to initialize Firebase: could not read service account file: %v", err)
+	}
+
+	// Verify it's valid JSON
+	var jsonContent map[string]interface{}
+	if err := json.Unmarshal(content, &jsonContent); err != nil {
+		return fmt.Errorf("failed to initialize Firebase: invalid service account JSON: %v", err)
+	}
+
+	// Verify required fields
+	requiredFields := []string{"type", "project_id", "private_key", "client_email"}
+	for _, field := range requiredFields {
+		if _, ok := jsonContent[field]; !ok {
+			return fmt.Errorf("failed to initialize Firebase: missing required field in service account: %s", field)
+		}
+	}
+
 	ctx := context.Background()
 	opt := option.WithCredentialsFile(serviceAccountPath)
 	app, err := firebase.NewApp(ctx, nil, opt)

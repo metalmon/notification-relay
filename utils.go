@@ -58,12 +58,41 @@ func init() {
 	initConfig()
 }
 
+// loadDataFiles loads all required data files and initializes global variables
 func loadDataFiles() {
-	// Skip credentials as they are already loaded by initCredentials()
-	ensureFileExists(UserDeviceMapJSON, &userDeviceMap)
-	ensureFileExists(DecorationJSON, &decorations)
-	ensureFileExists(TopicDecorationJSON, &topicDecorations)
-	ensureFileExists(IconsJSON, &icons)
+	// Add files to allowed files map first
+	allowedFiles[UserDeviceMapJSON] = true
+	allowedFiles[DecorationJSON] = true
+	allowedFiles[TopicDecorationJSON] = true
+	allowedFiles[IconsJSON] = true
+
+	// Load user device map
+	ensureFileExists(UserDeviceMapJSON, make(map[string]map[string][]string))
+	if err := loadJSON(UserDeviceMapJSON, &userDeviceMap); err != nil {
+		log.Printf("Warning: Failed to load user device map: %v", err)
+		userDeviceMap = make(map[string]map[string][]string)
+	}
+
+	// Load decorations
+	ensureFileExists(DecorationJSON, make(map[string]map[string]Decoration))
+	if err := loadJSON(DecorationJSON, &decorations); err != nil {
+		log.Printf("Warning: Failed to load decorations: %v", err)
+		decorations = make(map[string]map[string]Decoration)
+	}
+
+	// Load topic decorations
+	ensureFileExists(TopicDecorationJSON, make(map[string]TopicDecoration))
+	if err := loadJSON(TopicDecorationJSON, &topicDecorations); err != nil {
+		log.Printf("Warning: Failed to load topic decorations: %v", err)
+		topicDecorations = make(map[string]TopicDecoration)
+	}
+
+	// Load icons
+	ensureFileExists(IconsJSON, make(map[string]string))
+	if err := loadJSON(IconsJSON, &icons); err != nil {
+		log.Printf("Warning: Failed to load icons: %v", err)
+		icons = make(map[string]string)
+	}
 }
 
 func ensureFileExists(filename string, defaultValue interface{}) {
