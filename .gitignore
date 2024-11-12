@@ -10,9 +10,13 @@ my_secrets.py
 user-device-map.json
 
 # Configuration files containing sensitive data
+.env
 config.json
 credentials.json
 service-account.json
+
+# Test files
+testdata/
 
 # Logs
 *.log

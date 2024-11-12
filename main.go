@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -31,7 +32,7 @@ const (
 )
 
 var (
-	fbApp              *firebase.App
+	messagingClient    FirebaseMessagingClient
 	config             Config
 	userDeviceMap      = make(map[string]map[string][]string)
 	decorations        = make(map[string]map[string]Decoration)
@@ -50,6 +51,19 @@ var (
 		"test.json":         true,
 	}
 )
+
+var initFirebase = func() error {
+	if serviceAccountPath == "" {
+		return fmt.Errorf("failed to initialize Firebase: no service account file found")
+	}
+
+	content, err := readAndValidateServiceAccount()
+	if err != nil {
+		return err
+	}
+
+	return initializeFirebaseApp(content)
+}
 
 func init() {
 	// Check for service account path in environment
@@ -72,6 +86,77 @@ func init() {
 	}
 }
 
+func validateServiceAccount(jsonContent map[string]interface{}) error {
+	requiredFields := []string{
+		"type",
+		"project_id",
+		"private_key_id",
+		"private_key",
+		"client_email",
+		"client_id",
+		"auth_uri",
+		"token_uri",
+		"auth_provider_x509_cert_url",
+		"client_x509_cert_url",
+	}
+
+	for _, field := range requiredFields {
+		if _, ok := jsonContent[field].(string); !ok {
+			return fmt.Errorf("missing or invalid required field: %s", field)
+		}
+	}
+
+	// Verify it's a service account
+	if accountType, _ := jsonContent["type"].(string); accountType != "service_account" {
+		return fmt.Errorf("invalid account type: %s", accountType)
+	}
+
+	return nil
+}
+
+func readAndValidateServiceAccount() ([]byte, error) {
+	if _, err := os.Stat(serviceAccountPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to initialize Firebase: service account file not found")
+		}
+		return nil, fmt.Errorf("failed to initialize Firebase: error accessing service account file: %v", err)
+	}
+
+	// #nosec G304 -- serviceAccountPath is validated before use
+	content, err := os.ReadFile(serviceAccountPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Firebase: could not read service account file: %v", err)
+	}
+
+	return content, nil
+}
+
+func initializeFirebaseApp(content []byte) error {
+	var jsonContent map[string]interface{}
+	if err := json.Unmarshal(content, &jsonContent); err != nil {
+		return fmt.Errorf("failed to initialize Firebase: invalid service account JSON: %v", err)
+	}
+
+	if err := validateServiceAccount(jsonContent); err != nil {
+		return fmt.Errorf("failed to initialize Firebase: %v", err)
+	}
+
+	ctx := context.Background()
+	opt := option.WithCredentialsFile(serviceAccountPath)
+	app, err := firebase.NewApp(ctx, nil, opt)
+	if err != nil {
+		return fmt.Errorf("failed to initialize Firebase: %v", err)
+	}
+
+	client, err := app.Messaging(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to initialize messaging client: %v", err)
+	}
+
+	messagingClient = client
+	return nil
+}
+
 // Config represents the application configuration structure
 type Config struct {
 	VapidPublicKey string                 `json:"vapid_public_key"`
@@ -86,11 +171,7 @@ func main() {
 	}
 
 	// Initialize Firebase
-	ctx := context.Background()
-	opt := option.WithCredentialsFile(serviceAccountPath)
-	var err error
-	fbApp, err = firebase.NewApp(ctx, nil, opt)
-	if err != nil {
+	if err := initFirebase(); err != nil {
 		log.Fatalf("Failed to initialize Firebase: %v", err)
 	}
 
@@ -140,12 +221,14 @@ func main() {
 }
 
 func setTrustedProxies(router *gin.Engine, trustedProxies string) error {
-	if trustedProxies == "*" {
-		return router.SetTrustedProxies(nil) // Trust all proxies
+	trustedProxies = strings.TrimSpace(trustedProxies)
+
+	if trustedProxies == "" || trustedProxies == "none" {
+		return router.SetTrustedProxies([]string{}) // Trust no proxies
 	}
 
-	if trustedProxies == "none" {
-		return router.SetTrustedProxies([]string{}) // Trust no proxies
+	if trustedProxies == "*" {
+		return router.SetTrustedProxies(nil) // Trust all proxies
 	}
 
 	// Split the comma-separated list

@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -58,7 +59,7 @@ func TestLoadJSON(t *testing.T) {
 		{
 			name: "valid json file",
 			setupFile: func(path string) error {
-				return os.WriteFile(path, []byte(`{"test": "value"}`), 0644)
+				return os.WriteFile(path, []byte(`{"test": "value"}`), defaultFileMode)
 			},
 			filename:    "test.json",
 			expectError: false,
@@ -66,7 +67,7 @@ func TestLoadJSON(t *testing.T) {
 		{
 			name: "invalid json content",
 			setupFile: func(path string) error {
-				return os.WriteFile(path, []byte(`invalid json`), 0644)
+				return os.WriteFile(path, []byte(`invalid json`), defaultFileMode)
 			},
 			filename:    "test.json",
 			expectError: true,
@@ -74,7 +75,7 @@ func TestLoadJSON(t *testing.T) {
 		{
 			name: "non-json extension",
 			setupFile: func(path string) error {
-				return os.WriteFile(path, []byte(`{"test": "value"}`), 0644)
+				return os.WriteFile(path, []byte(`{"test": "value"}`), defaultFileMode)
 			},
 			filename:    "test.txt",
 			expectError: true,
@@ -159,6 +160,90 @@ func TestEnsureFileExists(t *testing.T) {
 
 			path := getConfigPath(tt.filename)
 			tt.checkResult(t, path)
+		})
+	}
+}
+
+func TestSaveJSON(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	tests := []struct {
+		name        string
+		filename    string
+		data        interface{}
+		setup       func()
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:     "save valid data",
+			filename: "test.json",
+			data: map[string]string{
+				"key": "value",
+			},
+			setup: func() {
+				allowedFiles["test.json"] = true
+			},
+			expectError: false,
+		},
+		{
+			name:     "save to unauthorized file",
+			filename: "unauthorized.json",
+			data: map[string]string{
+				"key": "value",
+			},
+			setup:       func() {},
+			expectError: true,
+			errorMsg:    "Unauthorized file access attempt: unauthorized.json",
+		},
+		{
+			name:     "invalid json data",
+			filename: "test.json",
+			data: map[string]interface{}{
+				"invalid": make(chan int), // channels cannot be marshaled to JSON
+			},
+			setup: func() {
+				allowedFiles["test.json"] = true
+			},
+			expectError: true,
+			errorMsg:    "Failed to marshal JSON: json: unsupported type: chan int",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setup()
+
+			if tt.expectError && tt.errorMsg == "Unauthorized file access attempt: unauthorized.json" {
+				assert.PanicsWithValue(t, tt.errorMsg, func() {
+					_ = saveJSON(tt.filename, tt.data)
+				})
+				return
+			}
+
+			if tt.expectError && strings.Contains(tt.errorMsg, "Failed to marshal JSON") {
+				assert.PanicsWithValue(t, tt.errorMsg, func() {
+					_ = saveJSON(tt.filename, tt.data)
+				})
+				return
+			}
+
+			err := saveJSON(tt.filename, tt.data)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+				// Verify file contents
+				var result map[string]string
+				err = loadJSON(tt.filename, &result)
+				require.NoError(t, err)
+				assert.Equal(t, tt.data, result)
+			}
 		})
 	}
 }
