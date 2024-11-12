@@ -1,6 +1,6 @@
 module github.com/your-username/notification-relay
 
-go 1.21
+go 1.22
 
 require (
 	firebase.google.com/go/v4 v4.13.0

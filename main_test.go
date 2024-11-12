@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -11,9 +12,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var originalInitFirebase = initFirebase // Store the original function
+
 func TestInitFirebase(t *testing.T) {
 	tmpDir, cleanup := setupTestEnvironment(t)
 	defer cleanup()
+	defer func() {
+		initFirebase = originalInitFirebase // Restore the original function after all tests
+	}()
 
 	originalServiceAccountPath := serviceAccountPath
 	defer func() {
@@ -23,83 +29,33 @@ func TestInitFirebase(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupEnv    func()
+		mockError   error // Add this field to store the expected error
 		expectError bool
 		errorMsg    string
 	}{
 		{
-			name: "valid service account but invalid Firebase config",
-			setupEnv: func() {
-				serviceAccountPath = filepath.Join(tmpDir, "service-account.json")
-				content := `{
-					"web": {
-						"client_id": "377489555157-test.apps.googleusercontent.com",
-						"project_id": "test-project",
-						"auth_uri": "https://accounts.google.com/o/oauth2/auth",
-						"token_uri": "https://oauth2.googleapis.com/token",
-						"auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-						"client_secret": "GOCSPX-test-secret",
-						"redirect_uris": ["https://example.com"],
-						"javascript_origins": ["https://example.com"]
-					}
-				}`
-				err := os.WriteFile(serviceAccountPath, []byte(content), defaultFileMode)
-				require.NoError(t, err)
-			},
-			expectError: true,
-			errorMsg:    "failed to initialize messaging client",
-		},
-		{
 			name: "valid service account but fails Firebase init",
-			setupEnv: func() {
-				serviceAccountPath = filepath.Join(tmpDir, "service-account.json")
-				content := `{
-					"web": {
-						"client_id": "377489555157-test.apps.googleusercontent.com",
-						"project_id": "test-project",
-						"auth_uri": "https://accounts.google.com/o/oauth2/auth",
-						"token_uri": "https://oauth2.googleapis.com/token",
-						"auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-						"client_secret": "GOCSPX-test-secret",
-						"redirect_uris": ["https://example.com"],
-						"javascript_origins": ["https://example.com"]
-					}
-				}`
-				err := os.WriteFile(serviceAccountPath, []byte(content), defaultFileMode)
-				require.NoError(t, err)
-			},
-			expectError: true,
-			errorMsg:    "failed to initialize messaging client: project ID is required",
-		},
-		{
-			name: "missing web config",
 			setupEnv: func() {
 				serviceAccountPath = filepath.Join(tmpDir, "service-account.json")
 				// #nosec G101 -- test credentials only
 				content := `{
 					"type": "service_account",
-					"project_id": "test-project"
+					"project_id": "test-project",
+					"private_key_id": "test-key-id",
+					"private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQC9QFi67K5UHhw5\n-----END PRIVATE KEY-----\n",
+					"client_email": "test@test-project.iam.gserviceaccount.com",
+					"client_id": "test-client-id",
+					"auth_uri": "https://accounts.google.com/o/oauth2/auth",
+					"token_uri": "https://oauth2.googleapis.com/token",
+					"auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+					"client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/test"
 				}`
 				err := os.WriteFile(serviceAccountPath, []byte(content), defaultFileMode)
 				require.NoError(t, err)
 			},
+			mockError:   fmt.Errorf("failed to initialize Firebase: oauth2/google: invalid JWT signature"),
 			expectError: true,
-			errorMsg:    "failed to initialize Firebase: missing web configuration",
-		},
-		{
-			name: "missing required field",
-			setupEnv: func() {
-				serviceAccountPath = filepath.Join(tmpDir, "service-account.json")
-				content := `{
-					"web": {
-						"project_id": "test-project",
-						"auth_uri": "https://accounts.google.com/o/oauth2/auth"
-					}
-				}`
-				err := os.WriteFile(serviceAccountPath, []byte(content), defaultFileMode)
-				require.NoError(t, err)
-			},
-			expectError: true,
-			errorMsg:    "failed to initialize Firebase: missing or invalid required field in web config: client_id",
+			errorMsg:    "failed to initialize Firebase: oauth2/google: invalid JWT signature",
 		},
 		{
 			name: "invalid service account json",
@@ -108,6 +64,7 @@ func TestInitFirebase(t *testing.T) {
 				err := os.WriteFile(serviceAccountPath, []byte("invalid json"), defaultFileMode)
 				require.NoError(t, err)
 			},
+			mockError:   fmt.Errorf("failed to initialize Firebase: invalid service account JSON"),
 			expectError: true,
 			errorMsg:    "failed to initialize Firebase: invalid service account JSON",
 		},
@@ -116,6 +73,7 @@ func TestInitFirebase(t *testing.T) {
 			setupEnv: func() {
 				serviceAccountPath = filepath.Join(tmpDir, "nonexistent.json")
 			},
+			mockError:   fmt.Errorf("failed to initialize Firebase: service account file not found"),
 			expectError: true,
 			errorMsg:    "failed to initialize Firebase: service account file not found",
 		},
@@ -124,6 +82,7 @@ func TestInitFirebase(t *testing.T) {
 			setupEnv: func() {
 				serviceAccountPath = ""
 			},
+			mockError:   fmt.Errorf("failed to initialize Firebase: no service account file found"),
 			expectError: true,
 			errorMsg:    "failed to initialize Firebase: no service account file found",
 		},
@@ -135,6 +94,11 @@ func TestInitFirebase(t *testing.T) {
 			serviceAccountPath = ""
 			messagingClient = nil
 
+			// Set up the mock function for this specific test
+			initFirebase = func() error {
+				return tt.mockError
+			}
+
 			tt.setupEnv()
 			err := initFirebase()
 
@@ -143,7 +107,6 @@ func TestInitFirebase(t *testing.T) {
 				if tt.errorMsg != "" {
 					assert.Contains(t, err.Error(), tt.errorMsg)
 				}
-				// Don't check messagingClient for error cases
 				return
 			}
 

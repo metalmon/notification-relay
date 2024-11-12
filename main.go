@@ -52,6 +52,19 @@ var (
 	}
 )
 
+var initFirebase = func() error {
+	if serviceAccountPath == "" {
+		return fmt.Errorf("failed to initialize Firebase: no service account file found")
+	}
+
+	content, err := readAndValidateServiceAccount()
+	if err != nil {
+		return err
+	}
+
+	return initializeFirebaseApp(content)
+}
+
 func init() {
 	// Check for service account path in environment
 	serviceAccountPath = os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
@@ -73,52 +86,32 @@ func init() {
 	}
 }
 
-func validateWebConfig(webConfig map[string]interface{}) error {
+func validateServiceAccount(jsonContent map[string]interface{}) error {
 	requiredFields := []string{
-		"client_id",
+		"type",
 		"project_id",
+		"private_key_id",
+		"private_key",
+		"client_email",
+		"client_id",
 		"auth_uri",
 		"token_uri",
 		"auth_provider_x509_cert_url",
-		"client_secret",
+		"client_x509_cert_url",
 	}
 
 	for _, field := range requiredFields {
-		if _, ok := webConfig[field].(string); !ok {
-			return fmt.Errorf("missing or invalid required field in web config: %s", field)
+		if _, ok := jsonContent[field].(string); !ok {
+			return fmt.Errorf("missing or invalid required field: %s", field)
 		}
 	}
 
-	return validateOptionalArrays(webConfig)
-}
-
-func validateOptionalArrays(webConfig map[string]interface{}) error {
-	if redirectURIs, ok := webConfig["redirect_uris"].([]interface{}); ok {
-		if len(redirectURIs) == 0 {
-			return fmt.Errorf("redirect_uris array is empty")
-		}
-	}
-
-	if origins, ok := webConfig["javascript_origins"].([]interface{}); ok {
-		if len(origins) == 0 {
-			return fmt.Errorf("javascript_origins array is empty")
-		}
+	// Verify it's a service account
+	if accountType, _ := jsonContent["type"].(string); accountType != "service_account" {
+		return fmt.Errorf("invalid account type: %s", accountType)
 	}
 
 	return nil
-}
-
-func initFirebase() error {
-	if serviceAccountPath == "" {
-		return fmt.Errorf("failed to initialize Firebase: no service account file found")
-	}
-
-	content, err := readAndValidateServiceAccount()
-	if err != nil {
-		return err
-	}
-
-	return initializeFirebaseApp(content)
 }
 
 func readAndValidateServiceAccount() ([]byte, error) {
@@ -144,12 +137,7 @@ func initializeFirebaseApp(content []byte) error {
 		return fmt.Errorf("failed to initialize Firebase: invalid service account JSON: %v", err)
 	}
 
-	webConfig, ok := jsonContent["web"].(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("failed to initialize Firebase: missing web configuration")
-	}
-
-	if err := validateWebConfig(webConfig); err != nil {
+	if err := validateServiceAccount(jsonContent); err != nil {
 		return fmt.Errorf("failed to initialize Firebase: %v", err)
 	}
 
