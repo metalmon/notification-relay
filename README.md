@@ -161,32 +161,6 @@ bench --site <your site> set-config push_relay_server_url "<your_push_relay_url:
 ```
 Enable the Push Notification Relay option in your app.
 
-## Docker Environment
-
-#### Directory Structure
-```
-~/.notification-relay/
-├── service-account.json
-├── config.json
-├── credentials.json
-├── decoration.json
-├── topic-decoration.json
-├── icons.json
-├── user-device-map.json
-└── logs/
-    └── notification-relay.log
-```
-
-#### Environment Variables
-
-The following environment variables can be configured in `.env`:
-- `PORT`: Server port number (default: 5000)
-- `CONFIG_DIR`: Path to configuration directory (default: ~/.notification-relay)
-- `LOG_DIR`: Path to log directory (default: ~/.notification-relay/logs)
-- `UID`: User ID for file permissions (default: current user's UID)
-- `GID`: Group ID for file permissions (default: current user's GID)
-- `TRUSTED_PROXIES`: Comma-separated list of trusted proxy CIDR ranges
-
 #### Logs
 
 The service logs are stored in `~/.notification-relay/logs/notification-relay.log`. You can view them in several ways:
