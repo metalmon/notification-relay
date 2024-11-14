@@ -184,6 +184,28 @@ func main() {
 	// Setup router
 	router := gin.Default()
 
+	// Add CORS middleware - Allow all origins
+	router.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*") // Allow any origin
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Authorization, Content-Type")
+
+		// Add Service Worker headers with more specific configuration
+		c.Writer.Header().Set("Service-Worker-Allowed", "/")
+		c.Writer.Header().Set("Service-Worker-Navigation-Preload", "true")
+		c.Writer.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
+		c.Writer.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+		c.Writer.Header().Set("Cross-Origin-Resource-Policy", "cross-origin")
+
+		// Handle preflight requests
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(200)
+			return
+		}
+
+		c.Next()
+	})
+
 	// Configure trusted proxies
 	trustedProxies := os.Getenv("TRUSTED_PROXIES")
 	if trustedProxies == "" {
@@ -197,9 +219,21 @@ func main() {
 		log.Printf("Warning: Failed to set trusted proxies: %v", err)
 	}
 
-	// API routes
+	// Add this before setting up routes
+	router.Use(func(c *gin.Context) {
+		// Normalize double slashes in URL path
+		path := strings.Replace(c.Request.URL.Path, "//", "/", -1)
+		if path != c.Request.URL.Path {
+			c.Request.URL.Path = path
+		}
+		c.Next()
+	})
+
+	// API routes - make sure the path starts with a single slash
+	router.GET("/api/method/notification_relay.api.get_config", getConfig)
 	router.POST("/api/method/notification_relay.api.auth.get_credential", getCredential)
-	router.POST("//api/method/notification_relay.api.get_config", getConfig)
+	log.Printf("Registered route: /api/method/notification_relay.api.get_config")
+	log.Printf("Registered route: /api/method/notification_relay.api.auth.get_credential")
 
 	// Protected routes
 	auth := router.Group("/", apiBasicAuth())

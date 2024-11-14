@@ -69,30 +69,49 @@ type ConfigResponse struct {
 	Exc            string                 `json:"exc,omitempty"`
 }
 
+// NotificationPayload represents the structure of the notification payload
+type NotificationPayload struct {
+	Title       string            `json:"title"`
+	Body        string            `json:"body"`
+	Data        map[string]string `json:"data,omitempty"`
+	Icon        string            `json:"icon,omitempty"`
+	ClickAction string            `json:"click_action,omitempty"`
+}
+
 // getConfig returns the VAPID public key and Firebase configuration
 func getConfig(c *gin.Context) {
-	var response ConfigResponse
+	// Project name is accepted but not used
+	projectName := c.Query("project_name")
+	log.Printf("Get config request for project: %s", projectName)
+
+	// Log the current config state
+	log.Printf("Current config state - VapidPublicKey: %s", config.VapidPublicKey)
+	log.Printf("Current config state - FirebaseConfig: %+v", config.FirebaseConfig)
 
 	// Check if required configuration is available
 	if config.VapidPublicKey == "" {
-		c.JSON(http.StatusInternalServerError, Response{
-			Exc: "VAPID public key not configured",
+		log.Printf("Error: VAPID public key is empty")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"exc": "VAPID public key not configured",
 		})
 		return
 	}
 
 	if config.FirebaseConfig == nil {
-		c.JSON(http.StatusInternalServerError, Response{
-			Exc: "Firebase configuration not initialized",
+		log.Printf("Error: Firebase config is nil")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"exc": "Firebase configuration not initialized",
 		})
 		return
 	}
 
-	// Create successful response with configuration values
-	response = ConfigResponse{
-		VapidPublicKey: config.VapidPublicKey,
-		Config:         config.FirebaseConfig,
+	response := gin.H{
+		"vapid_public_key": config.VapidPublicKey,
+		"config":           config.FirebaseConfig,
 	}
+
+	// Log the response we're sending
+	log.Printf("Sending response: %+v", response)
 
 	c.JSON(http.StatusOK, response)
 }
@@ -104,13 +123,30 @@ func getConfig(c *gin.Context) {
 // Returns a CredentialResponse with success status and either credentials or error message.
 func getCredential(c *gin.Context) {
 	var req CredentialRequest
-	if err := c.BindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, CredentialResponse{
-			Success: false,
-			Message: "Invalid request format",
-		})
-		return
+
+	// Try to get parameters from query string first
+	if c.Query("endpoint") != "" {
+		req = CredentialRequest{
+			Endpoint:     c.Query("endpoint"),
+			Protocol:     c.Query("protocol"),
+			Port:         c.Query("port"),
+			Token:        c.Query("token"),
+			WebhookRoute: c.Query("webhook_route"),
+		}
+	} else {
+		// Fall back to JSON body if query parameters aren't present
+		if err := c.BindJSON(&req); err != nil {
+			c.JSON(http.StatusOK, CredentialResponse{
+				Success: false,
+				Message: "Invalid request format",
+			})
+			return
+		}
 	}
+
+	// Log the request details
+	log.Printf("Credential request - Endpoint: %s, Protocol: %s, Port: %s, Token: %s, WebhookRoute: %s",
+		req.Endpoint, req.Protocol, req.Port, req.Token, req.WebhookRoute)
 
 	// Validate the request
 	if req.Endpoint == "" || req.Token == "" {
@@ -121,9 +157,31 @@ func getCredential(c *gin.Context) {
 		return
 	}
 
+	// Create HTTP client with options based on the endpoint
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	// For localhost, if protocol is HTTPS:
+	// Option 1: Switch to HTTP
+	webhookProtocol := req.Protocol
+	if req.Endpoint == "localhost" && req.Protocol == "https" {
+		log.Printf("Switching to HTTP for localhost")
+		webhookProtocol = "http"
+	}
+
+	// Option 2: Or skip TLS verification for localhost
+	/*
+		if req.Endpoint == "localhost" {
+			client.Transport = &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			}
+		}
+	*/
+
 	// Verify token by making request to the site's webhook
 	webhookURL := fmt.Sprintf("%s://%s%s%s",
-		req.Protocol,
+		webhookProtocol, // Use modified protocol
 		req.Endpoint,
 		func() string {
 			if req.Port != "" {
@@ -134,15 +192,18 @@ func getCredential(c *gin.Context) {
 		req.WebhookRoute,
 	)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	log.Printf("Making webhook request to: %s", webhookURL)
+
 	resp, err := client.Get(webhookURL)
 	if err != nil {
+		log.Printf("Webhook request failed: %v", err)
 		c.JSON(http.StatusOK, CredentialResponse{
 			Success: false,
-			Message: "Failed to verify token",
+			Message: fmt.Sprintf("Failed to verify token: %v", err),
 		})
 		return
 	}
+
 	if resp != nil {
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
@@ -150,6 +211,8 @@ func getCredential(c *gin.Context) {
 			}
 		}()
 	}
+
+	log.Printf("Webhook response status: %d", resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
 		c.JSON(http.StatusOK, CredentialResponse{
@@ -160,7 +223,19 @@ func getCredential(c *gin.Context) {
 	}
 
 	body, err := io.ReadAll(resp.Body)
-	if err != nil || string(body) != req.Token {
+	if err != nil {
+		log.Printf("Error reading webhook response: %v", err)
+		c.JSON(http.StatusOK, CredentialResponse{
+			Success: false,
+			Message: "Invalid token",
+		})
+		return
+	}
+
+	log.Printf("Webhook response body: %s", string(body))
+	log.Printf("Expected token: %s", req.Token)
+
+	if string(body) != req.Token {
 		c.JSON(http.StatusOK, CredentialResponse{
 			Success: false,
 			Message: "Invalid token",
@@ -176,17 +251,25 @@ func getCredential(c *gin.Context) {
 	credentials[apiKey] = apiSecret
 	err = saveJSON(CredentialsJSON, credentials)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, CredentialResponse{
-			Exc: fmt.Sprintf("Failed to save credentials: %v", err),
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"exc": gin.H{
+				"status_code": 500,
+				"message":     fmt.Sprintf("Failed to save credentials: %v", err),
+			},
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, CredentialResponse{
-		Success: true,
-		Credentials: &CredentialDetails{
-			APIKey:    apiKey,
-			APISecret: apiSecret,
+	log.Printf("Generated credentials - APIKey: %s", apiKey)
+
+	// Return response in Python server format
+	c.JSON(http.StatusOK, gin.H{
+		"message": gin.H{
+			"success": true,
+			"credentials": gin.H{
+				"api_key":    apiKey,
+				"api_secret": apiSecret,
+			},
 		},
 	})
 }
@@ -256,25 +339,28 @@ func subscribeToTopic(c *gin.Context) {
 
 		_, err := messagingClient.SubscribeToTopic(ctx, tokens, topicName)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, Response{
-				Exc: fmt.Sprintf("Failed to subscribe to topic: %v", err),
+			c.JSON(http.StatusBadRequest, gin.H{
+				"exc": gin.H{
+					"status_code": 400,
+					"message":     fmt.Sprintf("Failed to subscribe to topic: %v", err),
+				},
 			})
 			return
 		}
 
-		c.JSON(http.StatusOK, Response{
-			Message: map[string]interface{}{
-				"success": true,
+		c.JSON(http.StatusOK, gin.H{
+			"message": gin.H{
+				"success": 200,
 				"message": "User subscribed",
 			},
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, Response{
-		Message: map[string]interface{}{
-			"success": false,
-			"message": userID + " not subscribed to push notifications",
+	c.JSON(http.StatusBadRequest, gin.H{
+		"exc": gin.H{
+			"status_code": 404,
+			"message":     fmt.Sprintf("%s not subscribed to push notifications", userID),
 		},
 	})
 }
@@ -307,25 +393,28 @@ func unsubscribeFromTopic(c *gin.Context) {
 
 		_, err := messagingClient.UnsubscribeFromTopic(ctx, tokens, topicName)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, Response{
-				Exc: fmt.Sprintf("Failed to unsubscribe from topic: %v", err),
+			c.JSON(http.StatusBadRequest, gin.H{
+				"exc": gin.H{
+					"status_code": 400,
+					"message":     fmt.Sprintf("Failed to unsubscribe from topic: %v", err),
+				},
 			})
 			return
 		}
 
-		c.JSON(http.StatusOK, Response{
-			Message: map[string]interface{}{
-				"success": true,
+		c.JSON(http.StatusOK, gin.H{
+			"message": gin.H{
+				"success": 200,
 				"message": fmt.Sprintf("User %s unsubscribed from %s topic", userID, topicName),
 			},
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, Response{
-		Message: map[string]interface{}{
-			"success": false,
-			"message": userID + " not subscribed to push notifications",
+	c.JSON(http.StatusBadRequest, gin.H{
+		"exc": gin.H{
+			"status_code": 404,
+			"message":     fmt.Sprintf("%s not subscribed to push notifications", userID),
 		},
 	})
 }
@@ -359,16 +448,15 @@ func addToken(c *gin.Context) {
 	if tokens, exists := userDeviceMap[key][userID]; exists {
 		// Check for duplicate token
 		for _, token := range tokens {
-			if token != fcmToken {
-				continue
+			if token == fcmToken {
+				c.JSON(http.StatusOK, gin.H{
+					"message": gin.H{
+						"success": 200,
+						"message": "User Token duplicate found",
+					},
+				})
+				return
 			}
-			c.JSON(http.StatusOK, Response{
-				Message: map[string]interface{}{
-					"success": true,
-					"message": "User Token duplicate found",
-				},
-			})
-			return
 		}
 		userDeviceMap[key][userID] = append(tokens, fcmToken)
 	} else {
@@ -377,16 +465,18 @@ func addToken(c *gin.Context) {
 
 	err := saveJSON(UserDeviceMapJSON, userDeviceMap)
 	if err != nil {
-		excBytes, _ := json.Marshal([]string{fmt.Sprintf("Failed to save user device map: %v", err)})
-		c.JSON(http.StatusInternalServerError, Response{
-			Exc: string(excBytes),
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"exc": gin.H{
+				"status_code": 500,
+				"message":     fmt.Sprintf("Failed to save user device map: %v", err),
+			},
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, Response{
-		Message: map[string]interface{}{
-			"success": true,
+	c.JSON(http.StatusOK, gin.H{
+		"message": gin.H{
+			"success": 200,
 			"message": "User Token added",
 		},
 	})
@@ -405,33 +495,32 @@ func removeToken(c *gin.Context) {
 
 	if tokens, exists := userDeviceMap[key][userID]; exists {
 		for i, token := range tokens {
-			if token != fcmToken {
-				continue
-			}
-			// Found the token, remove it
-			userDeviceMap[key][userID] = append(tokens[:i], tokens[i+1:]...)
-			err := saveJSON(UserDeviceMapJSON, userDeviceMap)
-			if err != nil {
-				excBytes, _ := json.Marshal([]string{"Failed to save user device map"})
-				c.JSON(http.StatusInternalServerError, Response{
-					Exc: string(excBytes),
+			if token == fcmToken {
+				userDeviceMap[key][userID] = append(tokens[:i], tokens[i+1:]...)
+				err := saveJSON(UserDeviceMapJSON, userDeviceMap)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{
+						"exc": gin.H{
+							"status_code": 500,
+							"message":     "Failed to save user device map",
+						},
+					})
+					return
+				}
+				c.JSON(http.StatusOK, gin.H{
+					"message": gin.H{
+						"success": 200,
+						"message": "User Token removed",
+					},
 				})
 				return
 			}
-			c.JSON(http.StatusOK, Response{
-				Message: map[string]interface{}{
-					"success": true,
-					"message": "User Token removed",
-				},
-			})
-			return
 		}
 	}
 
-	// If token not found, still return successful result
-	c.JSON(http.StatusOK, Response{
-		Message: map[string]interface{}{
-			"success": true,
+	c.JSON(http.StatusOK, gin.H{
+		"message": gin.H{
+			"success": 200,
 			"message": "User Token not found, removed",
 		},
 	})
@@ -518,7 +607,6 @@ func prepareWebPushConfig(key, title, body, data string) (*messaging.WebpushConf
 // Takes notification parameters from request query parameters.
 // Returns a JSON response with the sending result.
 func sendNotificationToUser(c *gin.Context) {
-	// Get request parameters
 	projectName := c.Query("project_name")
 	siteName := c.Query("site_name")
 	key := projectName + "_" + siteName
@@ -527,38 +615,67 @@ func sendNotificationToUser(c *gin.Context) {
 	body := c.Query("body")
 	data := c.Query("data")
 
-	// Check required parameters
-	if err := validateNotificationParams(title, body); err != nil {
-		c.JSON(http.StatusOK, Response{
-			Message: map[string]interface{}{
-				"success": false,
-				"message": err.Error(),
-			},
-		})
-		return
-	}
-
-	// Get user's tokens
+	// Get user's tokens first
 	tokens, err := getUserTokens(key, userID)
 	if err != nil {
-		c.JSON(http.StatusOK, Response{
-			Message: map[string]interface{}{
-				"success": false,
-				"message": err.Error(),
+		c.JSON(http.StatusBadRequest, gin.H{
+			"exc": gin.H{
+				"status_code": 404,
+				"message":     err.Error(),
 			},
 		})
 		return
 	}
 
-	webpushConfig, err := prepareWebPushConfig(key, title, body, data)
-	if err != nil {
-		c.JSON(http.StatusOK, Response{
-			Message: map[string]interface{}{
-				"success": false,
-				"message": err.Error(),
+	// Parse the data JSON for notification settings
+	var dataMap map[string]interface{}
+	if err := json.Unmarshal([]byte(data), &dataMap); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"exc": gin.H{
+				"status_code": 400,
+				"message":     fmt.Sprintf("Invalid data format: %v", err),
 			},
 		})
 		return
+	}
+
+	// Convert data fields to string values for FCM
+	dataMapStr := convertToStringMap(dataMap)
+
+	// Get notification icon and click_action from original dataMap
+	notificationIcon := ""
+	if icon, ok := dataMap["notification_icon"].(string); ok {
+		notificationIcon = icon
+	}
+
+	// Prepare web push config
+	webpushConfig := &messaging.WebpushConfig{
+		Notification: &messaging.WebpushNotification{
+			Title: title,
+			Body:  body,
+			Icon:  notificationIcon,
+		},
+	}
+
+	// Add click_action if present in original dataMap
+	if clickAction, ok := dataMap["click_action"].(string); ok {
+		webpushConfig.FCMOptions = &messaging.WebpushFCMOptions{
+			Link: clickAction,
+		}
+	}
+
+	// Add icon if configured
+	addIconToConfig(key, webpushConfig)
+
+	// Create a map for notification data
+	notificationData := map[string]string{
+		"title": title,
+		"body":  body,
+	}
+
+	// Add all fields from dataMap to notificationData
+	for k, v := range dataMapStr {
+		notificationData[k] = v
 	}
 
 	// Send notification to all user tokens
@@ -566,51 +683,45 @@ func sendNotificationToUser(c *gin.Context) {
 	defer cancel()
 
 	validTokens := make([]string, 0, len(tokens))
-
 	for _, token := range tokens {
 		message := &messaging.Message{
 			Token:   token,
 			Webpush: webpushConfig,
+			Data:    notificationData, // Send combined data
 		}
 
-		_, err = messagingClient.Send(ctx, message)
+		// Log the outgoing message
+		log.Printf("Sending FCM message to token %s:", token)
+		if msgBytes, err := json.MarshalIndent(message, "", "  "); err == nil {
+			log.Printf("Message payload:\n%s", string(msgBytes))
+		}
+
+		// Send the message
+		response, err := messagingClient.Send(ctx, message)
 		if err != nil {
-			if err.Error() == "invalid registration token" {
-				// Remove invalid token from user's device map
-				for i, t := range userDeviceMap[key][userID] {
-					if t == token {
-						userDeviceMap[key][userID] = append(userDeviceMap[key][userID][:i], userDeviceMap[key][userID][i+1:]...)
-						break
-					}
-				}
-				// Save updated device map
-				if err := saveJSON(UserDeviceMapJSON, userDeviceMap); err != nil {
-					log.Printf("Failed to save updated device map: %v", err)
-				}
-				continue // Try next token
-			}
-
-			break
+			log.Printf("Failed to send notification to token %s: %v", token, err)
+			continue
 		}
+
+		log.Printf("FCM Response for token %s: %s", token, response)
 		validTokens = append(validTokens, token)
 	}
 
-	// If there was an error and no valid tokens were found
-	if len(validTokens) == 0 {
-		c.JSON(http.StatusOK, Response{
-			Message: map[string]interface{}{
-				"success": false,
-				"message": "No valid tokens found",
+	// Return response
+	if len(validTokens) > 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"message": gin.H{
+				"success": 200,
+				"message": fmt.Sprintf("%d Notification(s) sent to %s user", len(validTokens), userID),
 			},
 		})
 		return
 	}
 
-	// Return success if at least one notification was sent
-	c.JSON(http.StatusOK, Response{
-		Message: map[string]interface{}{
-			"success": true,
-			"message": "Notification sent",
+	c.JSON(http.StatusBadRequest, gin.H{
+		"exc": gin.H{
+			"status_code": 404,
+			"message":     fmt.Sprintf("%s not subscribed to push notifications", userID),
 		},
 	})
 }
@@ -696,36 +807,101 @@ func sendNotificationToTopic(c *gin.Context) {
 		return
 	}
 
-	webpushConfig, err := prepareTopicWebPushConfig(topic, title, body, data)
-	if err != nil {
-		c.JSON(http.StatusOK, Response{
-			Message: map[string]interface{}{
-				"success": false,
-				"message": err.Error(),
+	// Parse the data JSON for notification settings
+	var dataMap map[string]interface{}
+	if err := json.Unmarshal([]byte(data), &dataMap); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"exc": gin.H{
+				"status_code": 400,
+				"message":     fmt.Sprintf("Invalid data format: %v", err),
 			},
 		})
 		return
 	}
 
+	// Convert data fields to string values for FCM
+	dataMapStr := convertToStringMap(dataMap)
+
+	// Get notification icon from original dataMap
+	notificationIcon := ""
+	if icon, ok := dataMap["notification_icon"].(string); ok {
+		notificationIcon = icon
+	}
+
+	// Prepare web push config
+	webpushConfig := &messaging.WebpushConfig{
+		Notification: &messaging.WebpushNotification{
+			Title: title,
+			Body:  body,
+			Icon:  notificationIcon,
+		},
+	}
+
+	// Add click_action if present in original dataMap
+	if clickAction, ok := dataMap["click_action"].(string); ok {
+		webpushConfig.FCMOptions = &messaging.WebpushFCMOptions{
+			Link: clickAction,
+		}
+	}
+
+	// Create a map for notification data
+	notificationData := map[string]string{
+		"title": title,
+		"body":  body,
+	}
+
+	// Add all fields from dataMap to notificationData
+	for k, v := range dataMapStr {
+		notificationData[k] = v
+	}
+
 	message := &messaging.Message{
 		Topic:   topic,
 		Webpush: webpushConfig,
+		Data:    notificationData, // Send combined data
+	}
+
+	// Log the outgoing message
+	log.Printf("Sending FCM message to topic %s:", topic)
+	if msgBytes, err := json.MarshalIndent(message, "", "  "); err == nil {
+		log.Printf("Message payload:\n%s", string(msgBytes))
 	}
 
 	ctx := context.Background()
-	_, err = messagingClient.Send(ctx, message)
+	response, err := messagingClient.Send(ctx, message)
 	if err != nil {
-		excBytes, _ := json.Marshal([]string{fmt.Sprintf("Failed to send notification: %v", err)})
-		c.JSON(http.StatusInternalServerError, Response{
-			Exc: string(excBytes),
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"exc": gin.H{
+				"status_code": 500,
+				"message":     fmt.Sprintf("Failed to send notification: %v", err),
+			},
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, Response{
-		Message: map[string]interface{}{
-			"success": true,
+	log.Printf("FCM Response for topic %s: %s", topic, response)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": gin.H{
+			"success": 200,
 			"message": fmt.Sprintf("Notification sent to %s topic", topic),
 		},
 	})
+}
+
+// Convert map[string]interface{} to map[string]string
+func convertToStringMap(m map[string]interface{}) map[string]string {
+	result := make(map[string]string)
+	for k, v := range m {
+		switch val := v.(type) {
+		case string:
+			result[k] = val
+		default:
+			// Convert other types to string using JSON marshaling
+			if bytes, err := json.Marshal(val); err == nil {
+				result[k] = string(bytes)
+			}
+		}
+	}
+	return result
 }
