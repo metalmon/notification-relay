@@ -199,7 +199,7 @@ func main() {
 
 	// API routes
 	router.POST("/api/method/notification_relay.api.auth.get_credential", getCredential)
-	router.POST("/api/method/notification_relay.api.get_config", getConfig)
+	router.POST("//api/method/notification_relay.api.get_config", getConfig)
 
 	// Protected routes
 	auth := router.Group("/", apiBasicAuth())
