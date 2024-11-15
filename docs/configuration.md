@@ -17,10 +17,27 @@
   - `none`: Trust no proxies
   - Default: `127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`
 
+## Proxy Configuration
+
+The server requires trusted proxy configuration for proper handling of client IP addresses behind reverse proxies. This can be set in two ways:
+
+1. Through environment variable `TRUSTED_PROXIES`
+2. In `config.json` using the `trusted_proxies` field
+
+The configuration accepts:
+- CIDR ranges (e.g., "10.0.0.0/8")
+- Multiple ranges separated by commas
+- Special values: "*" (trust all) or "none" (trust none)
+
+Example CIDR configurations:
+- Local proxy: `127.0.0.1/32`
+- Private networks: `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`
+- Cloud provider: `35.190.247.0/24`
+
 ## File Structure
 The server uses several JSON configuration files:
 
-1. `config.json` - Firebase and VAPID configuration
+1. `config.json` - Project-specific Firebase and VAPID configurations (required)
 2. `credentials.json` - Generated API credentials for authenticated sites
 3. `decoration.json` - Notification decoration rules and patterns for user notifications
 4. `topic-decoration.json` - Notification decoration rules and patterns for topic notifications
@@ -28,26 +45,85 @@ The server uses several JSON configuration files:
 6. `user-device-map.json` - User device token mapping
 
 ## config.json
-Main configuration file containing Firebase and VAPID settings:
+Main configuration file containing project-specific Firebase and VAPID settings. The `trusted_proxies` field is required:
 
 ```json
 {
-    "vapid_public_key": "your_vapid_public_key",
-    "firebase_config": {
-        "apiKey": "your-firebase-api-key",
-        "authDomain": "your-project.firebaseapp.com",
-        "projectId": "your-project-id",
-        "storageBucket": "your-project.appspot.com",
-        "messagingSenderId": "your-sender-id",
-        "appId": "your-app-id",
-        "measurementId": "your-measurement-id"
+    "projects": {
+        "project1": {
+            "vapid_public_key": "project1_vapid_public_key",
+            "firebase_config": {
+                "apiKey": "project1-firebase-api-key",
+                "authDomain": "project1.firebaseapp.com",
+                "projectId": "project1-id",
+                "storageBucket": "project1.appspot.com",
+                "messagingSenderId": "project1-sender-id",
+                "appId": "project1-app-id",
+                "measurementId": "project1-measurement-id"
+            }
+        },
+        "project2": {
+            "vapid_public_key": "project2_vapid_public_key",
+            "firebase_config": {
+                "apiKey": "project2-firebase-api-key",
+                "authDomain": "project2.firebaseapp.com",
+                "projectId": "project2-id",
+                "storageBucket": "project2.appspot.com",
+                "messagingSenderId": "project2-sender-id",
+                "appId": "project2-app-id",
+                "measurementId": "project2-measurement-id"
+            }
+        }
     },
     "trusted_proxies": "127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 }
 ```
 
-## credentials.json
+## decoration.json
+This file defines notification title decoration rules for user notifications. Rules are applied based on project and pattern matching:
 
+```json
+{
+    "project1_example.com": {
+        "error": {
+            "pattern": "^Error:",
+            "template": "⚠️ {title}"
+        },
+        "success": {
+            "pattern": "^Success:",
+            "template": "✅ {title}"
+        }
+    }
+}
+```
+
+## topic-decoration.json
+This file defines notification title decoration rules for topic notifications:
+
+```json
+{
+    "announcements": {
+        "pattern": ".*",
+        "template": "📢 {title}"
+    },
+    "alerts": {
+        "pattern": "^Alert:",
+        "template": "🚨 {title}"
+    }
+}
+```
+
+## icons.json
+This file maps projects to their notification icon paths:
+
+```json
+{
+    "project1_example.com": "/static/icons/project1-icon.png",
+    "project2_example.com": "/static/icons/project2-icon.png"
+}
+```
+
+## credentials.json
 This file stores the API credentials for authenticated sites. It is automatically managed by the server through the `/api/method/notification_relay.api.auth.get_credential` endpoint:
 
 ```json
@@ -58,24 +134,11 @@ This file stores the API credentials for authenticated sites. It is automaticall
 ```
 
 ## user-device-map.json
-
 This file maintains the mapping between users and their FCM tokens:
 
 ```json
 {
-    "project_site": {
-        "user_id": [
-            "fcm_token_1",
-            "fcm_token_2"
-        ]
-    }
-}
-```
-
-Example:
-```json
-{
-    "raven_erp-omniverse.com": {
+    "project1_example.com": {
         "user@example.com": [
             "fcm_token_123",
             "fcm_token_456"
@@ -85,3 +148,32 @@ Example:
 ```
 
 This file is automatically managed by the server - you don't need to edit it manually.
+
+## Notification Decoration
+The server supports two types of notification decorations:
+
+1. User Notifications (`decoration.json`):
+   - Applied based on project and pattern matching
+   - Useful for adding icons to specific types of notifications
+   - Patterns are matched against notification titles
+   - Templates can include the original title using `{title}`
+
+2. Topic Notifications (`topic-decoration.json`):
+   - Applied based on topic name and pattern matching
+   - Useful for adding topic-specific prefixes or icons
+   - Patterns are matched against notification titles
+   - Templates can include the original title using `{title}`
+
+## Icons
+Project icons are automatically added to notifications based on the project key (project_name + site_name). For topic notifications, icons can be specified in the notification data using the `icon` field.
+
+## Project Keys
+Throughout the configuration, project keys are formatted as `project_name_site_name`. For example:
+- Project name: "project1"
+- Site name: "example.com"
+- Project key: "project1_example.com"
+
+This key format is used in:
+- User device mapping
+- Decoration rules
+- Icon paths

@@ -1,185 +1,104 @@
-# Push Notification Relay Server for Frappe Apps
-This repo provides a push notification relay server for Frappe Apps such as Raven, implemented in Go.
+# Notification Relay Service
 
-## Installation
+A service for managing web push notifications across multiple projects using Firebase Cloud Messaging (FCM).
 
-### Option 1: Docker Compose (Recommended)
-#### 1. Create .env file
-Copy the example environment file and adjust the values as needed:
+## Features
+
+- Multi-project support with separate Firebase configurations
+- Topic-based notifications
+- User-specific notifications
+- Customizable notification decorations
+- Icon management
+- Secure API authentication
+- Docker support
+
+## Quick Install (Linux)
+
+### Option 1: One-line Install
 ```bash
-# Copy the example file
-cp .env.example .env
-
-# Edit the file with your settings
-nano .env
+curl -sSL https://raw.githubusercontent.com/your-org/notification-relay/main/install-binary.sh | sudo bash
 ```
 
-The following environment variables can be configured in `.env`:
-- `PORT`: Server port number (default: 5000)
-- `CONFIG_DIR`: Path to configuration directory (default: ~/.notification-relay)
-- `LOG_DIR`: Path to log directory (default: ~/.notification-relay/logs)
-- `UID`: User ID for file permissions (default: current user's UID)
-- `GID`: Group ID for file permissions (default: current user's GID)
-- `TRUSTED_PROXIES`: Comma-separated list of trusted proxy CIDR ranges. Special values:
-  - `*`: Trust all proxies (not recommended)
-  - `none`: Trust no proxies
-  - Default: `127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`
+### Option 2: Manual Install
+1. Download the install script:
+   ```bash
+   wget https://raw.githubusercontent.com/your-org/notification-relay/main/install-binary.sh
+   chmod +x install-binary.sh
+   ```
 
-To get your current user's UID and GID:
-```bash
-echo "UID=$(id -u)"
-echo "GID=$(id -g)"
-```
+2. Run the installer:
+   ```bash
+   sudo ./install-binary.sh
+   ```
 
+3. Configure and start:
+   ```bash
+   # Update configuration
+   sudo nano /etc/notification-relay/config.json
 
-#### 2. Create required files and directories:
+   # Add your service account key
+   sudo cp path/to/service-account.json /etc/notification-relay/
 
-Create configuration and log directories
-```bash
-mkdir -p ~/.notification-relay/logs
-chmod 750 ~/.notification-relay
-chmod 750 ~/.notification-relay/logs
-```
+   # Start and enable the service
+   sudo systemctl start notification-relay
+   sudo systemctl enable notification-relay
+   ```
 
-Place your Firebase service account JSON file at ~/.notification-relay/service-account.json
+## Production Deployment with Docker
 
-Create config.json
-```bash
-cat > ~/.notification-relay/config.json << EOL
-{
-    "vapid_public_key": "your_vapid_public_key",
-    "firebase_config": {
-        "apiKey": "your-firebase-api-key",
-        "authDomain": "your-project.firebaseapp.com",
-        "projectId": "your-project-id",
-        "storageBucket": "your-project.appspot.com",
-        "messagingSenderId": "your-sender-id",
-        "appId": "your-app-id",
-        "measurementId": "your-measurement-id"
-    },
-    "trusted_proxies": "127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
-}
-EOL
-```
+For production environments, we recommend using Docker:
 
-Create other configuration files and set proper permissions
-```bash
-touch ~/.notification-relay/credentials.json
-touch ~/.notification-relay/user-device-map.json
-touch ~/.notification-relay/decoration.json
-touch ~/.notification-relay/topic-decoration.json
-touch ~/.notification-relay/icons.json
+1. Create configuration directory:
+   ```bash
+   sudo mkdir -p /etc/notification-relay
+   ```
 
-# Set proper permissions
-chmod 600 ~/.notification-relay/*.json
-```
+2. Set up configuration:
+   ```bash
+   # Copy your config files
+   sudo cp config.json /etc/notification-relay/
+   sudo cp service-account.json /etc/notification-relay/
+   ```
 
-#### 3. Start the service:
-```bash
-# Build and start
-docker-compose up -d
-```
-```bash
-# View logs
-docker-compose logs -f
-```
-```bash
-# Rebuild after code changes
-docker-compose up -d --build
-```
-```bash
-# Stop service
-docker-compose down
-```
+3. Run with Docker Compose:
+   ```bash
+   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+   ```
 
-### Option 2: Docker Build
-Build the image
-```bash
-# Build the image
-docker build -t notification-relay .
-```
+## Documentation
 
-Run the container
-```bash
-docker run -d \
-  -p 5000:5000 \
-  -v ~/.notification-relay:/etc/notification-relay \
-  -v ~/.notification-relay/logs:/var/log/notification-relay \
-  --user $(id -u):$(id -g) \
-  notification-relay
-```
+- [Configuration Guide](docs/configuration.md) - Detailed configuration instructions
+- [Firebase Setup Guide](docs/firebase-setup.md) - How to set up Firebase and generate VAPID keys
+- [API Documentation](docs/api.md) - API endpoints and usage
+- [Decoration Guide](docs/decoration.md) - Notification decoration configuration
+- [Icons Guide](docs/icons.md) - Icon configuration and usage
 
-### Option 3: Easy Installation Script
-Run the following command to automatically download and install everything:
-```bash
-curl -sSL https://raw.githubusercontent.com/metalmon/notification-relay/main/install.sh | sudo bash
-```
+## Configuration Files
 
-After installation:
-1. Edit `/etc/notification-relay/config.json` with your configuration
-2. Place your Firebase service account JSON file at `/etc/notification-relay/service-account.json`
-3. Start the service:
-```bash
-sudo systemctl start notification-relay
-```
+- `config.json` - Main configuration file (required)
+- `credentials.json` - API credentials (auto-generated)
+- `decoration.json` - Notification decoration rules
+- `topic-decoration.json` - Topic-specific decoration rules
+- `icons.json` - Project icon paths
+- `user-device-map.json` - User device token mapping (auto-generated)
 
-## Configuration
-The server uses the following configuration files:
+## Environment Variables
 
-### Service Account
-Firebase service account JSON file can be configured in several ways:
-1. Via environment variable: `GOOGLE_APPLICATION_CREDENTIALS`
-2. Default locations (checked in order):
-   - `./service-account.json`
-   - `/etc/notification-relay/service-account.json`
+- `NOTIFICATION_RELAY_CONFIG` - Path to config.json
+- `GOOGLE_APPLICATION_CREDENTIALS` - Path to service account JSON
+- `LISTEN_PORT` - Server port (default: 5000)
+- `TRUSTED_PROXIES` - Trusted proxy CIDR ranges
 
-### Other Configuration Files
-- `config.json`: Main configuration file containing VAPID key, Firebase config and trusted proxies
-- `credentials.json`: Stores API keys and secrets for authenticated sites
-- `user-device-map.json`: Maps users to their device tokens
-- [`decoration.json`](docs/decoration.md): Notification decoration rules and patterns for user notifications
-- [`topic-decoration.json`](docs/decoration.md): Notification decoration rules and patterns for topic notifications
-- [`icons.json`](docs/icons.md): Icon paths for different projects
+## Security Considerations
 
-For detailed configuration examples and structure, see the [configuration documentation](docs/configuration.md).
+1. Always use HTTPS in production
+2. Configure trusted proxies appropriately
+3. Keep service account and VAPID keys secure
+4. Use strong API credentials
+5. Set appropriate file permissions
 
-## API Documentation
+## License
 
-The server provides several endpoints for managing notifications, topics, and device tokens. For detailed API documentation, see [API Documentation](docs/api.md).
-
-Key features include:
-- Authentication and credential management
-- Topic subscription management
-- Device token management
-- User and topic notification sending
-
-## Frappe Integration
-Add push relay server url to your site configuration
-```bash
-# Change <your site> and <your_push_relay_url:port> for according values
-bench --site <your site> set-config push_relay_server_url "<your_push_relay_url:port>"
-```
-Enable the Push Notification Relay option in your app.
-
-#### Logs
-
-The service logs are stored in `~/.notification-relay/logs/notification-relay.log`. You can view them in several ways:
-
-```bash
-# Using docker compose (all logs)
-docker-compose logs -f
-```
-```bash
-# Using docker compose (last 100 lines)
-docker-compose logs --tail=100 -f
-```
-```bash
-# Directly from log file
-tail -f ~/.notification-relay/logs/notification-relay.log
-```
-```bash
-# Last 100 lines from file
-tail -n 100 ~/.notification-relay/logs/notification-relay.log
-```
+[MIT License](LICENSE)
 
 

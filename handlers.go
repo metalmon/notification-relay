@@ -17,103 +17,62 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CredentialRequest represents a request for API credentials with validation requirements
-type CredentialRequest struct {
-	Endpoint     string `json:"endpoint"`      // Required: The endpoint URL
-	Protocol     string `json:"protocol"`      // The protocol (http/https)
-	Port         string `json:"port"`          // Optional: The port number
-	Token        string `json:"token"`         // Required: Authentication token
-	WebhookRoute string `json:"webhook_route"` // The webhook route path
-}
-
-// CredentialResponse represents an API credentials response
-type CredentialResponse struct {
-	Success     bool               `json:"success"`
-	Message     string             `json:"message,omitempty"`
-	Credentials *CredentialDetails `json:"credentials,omitempty"`
-	Exc         string             `json:"exc,omitempty"`
-}
-
-// CredentialDetails contains generated API credentials
-type CredentialDetails struct {
-	APIKey    string `json:"api_key"`
-	APISecret string `json:"api_secret"`
-}
-
-// Credentials represents a map of API credentials
-type Credentials map[string]string
-
-// Response represents the standard API response structure with optional fields
-type Response struct {
-	Message interface{} `json:"message,omitempty"` // Success message or status information
-	Data    interface{} `json:"data,omitempty"`    // Response payload data
-	Exc     string      `json:"exc,omitempty"`     // Error message for critical failures
-}
-
-// Decoration represents a notification title decoration rule for user notifications
-type Decoration struct {
-	Pattern  string `json:"pattern"`
-	Template string `json:"template"`
-}
-
-// TopicDecoration represents a notification title decoration rule for topic notifications
-type TopicDecoration struct {
-	Pattern  string `json:"pattern"`
-	Template string `json:"template"`
-}
-
-// ConfigResponse represents the response structure for the getConfig endpoint
-type ConfigResponse struct {
-	VapidPublicKey string                 `json:"vapid_public_key"`
-	Config         map[string]interface{} `json:"config"`
-	Exc            string                 `json:"exc,omitempty"`
-}
-
-// NotificationPayload represents the structure of the notification payload
-type NotificationPayload struct {
-	Title       string            `json:"title"`
-	Body        string            `json:"body"`
-	Data        map[string]string `json:"data,omitempty"`
-	Icon        string            `json:"icon,omitempty"`
-	ClickAction string            `json:"click_action,omitempty"`
-}
-
-// getConfig returns the VAPID public key and Firebase configuration
 func getConfig(c *gin.Context) {
-	// Project name is accepted but not used
 	projectName := c.Query("project_name")
 	log.Printf("Get config request for project: %s", projectName)
 
-	// Log the current config state
-	log.Printf("Current config state - VapidPublicKey: %s", config.VapidPublicKey)
-	log.Printf("Current config state - FirebaseConfig: %+v", config.FirebaseConfig)
+	if projectName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"exc": gin.H{
+				"status_code": http.StatusBadRequest,
+				"message":     "Project name is required",
+			},
+		})
+		return
+	}
+
+	// Get project-specific config
+	projectConfig, exists := config.Projects[projectName]
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{
+			"exc": gin.H{
+				"status_code": http.StatusNotFound,
+				"message":     fmt.Sprintf("Configuration not found for project: %s", projectName),
+			},
+		})
+		return
+	}
 
 	// Check if required configuration is available
-	if config.VapidPublicKey == "" {
-		log.Printf("Error: VAPID public key is empty")
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"exc": "VAPID public key not configured",
+	if projectConfig.VapidPublicKey == "" {
+		log.Printf("Error: VAPID public key is empty for project %s", projectName)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"exc": gin.H{
+				"status_code": http.StatusBadRequest,
+				"message":     "VAPID public key not configured",
+			},
 		})
 		return
 	}
 
-	if config.FirebaseConfig == nil {
-		log.Printf("Error: Firebase config is nil")
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"exc": "Firebase configuration not initialized",
+	if projectConfig.FirebaseConfig == nil {
+		log.Printf("Error: Firebase config is nil for project %s", projectName)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"exc": gin.H{
+				"status_code": http.StatusBadRequest,
+				"message":     "Firebase configuration not initialized",
+			},
 		})
 		return
 	}
 
-	response := gin.H{
-		"vapid_public_key": config.VapidPublicKey,
-		"config":           config.FirebaseConfig,
-	}
-
-	// Log the response we're sending
-	log.Printf("Sending response: %+v", response)
-
-	c.JSON(http.StatusOK, response)
+	// Return project-specific config
+	c.JSON(http.StatusOK, gin.H{
+		"message": gin.H{
+			"vapid_public_key": projectConfig.VapidPublicKey,
+			"config":           projectConfig.FirebaseConfig,
+		},
+	})
 }
 
 // getCredential handles API credential requests by validating the request,
@@ -318,30 +277,26 @@ func apiBasicAuth() gin.HandlerFunc {
 func subscribeToTopic(c *gin.Context) {
 	projectName := c.Query("project_name")
 	siteName := c.Query("site_name")
-	key := projectName + "_" + siteName
+	key := formatProjectKey(projectName, siteName)
 	userID := c.Query("user_id")
 	topicName := c.Query("topic_name")
 
-	// Check if topic name is empty first
-	if topicName == "" {
-		c.JSON(http.StatusOK, Response{
-			Message: map[string]interface{}{
-				"success": false,
-				"message": "topic_name is required",
-			},
-		})
+	// Validate project exists
+	if err := validateProject(projectName); err != nil {
+		sendErrorResponse(c, http.StatusNotFound, err.Error())
 		return
 	}
 
-	// Get user tokens first using getUserTokens
+	// Check if topic name is empty
+	if topicName == "" {
+		sendErrorResponse(c, http.StatusBadRequest, "topic_name is required")
+		return
+	}
+
+	// Get user tokens
 	tokens, err := getUserTokens(key, userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"exc": gin.H{
-				"status_code": 404,
-				"message":     err.Error(),
-			},
-		})
+		sendErrorResponse(c, http.StatusNotFound, err.Error())
 		return
 	}
 
@@ -351,79 +306,73 @@ func subscribeToTopic(c *gin.Context) {
 
 	response, err := messagingClient.SubscribeToTopic(ctx, tokens, topicName)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"exc": gin.H{
-				"status_code": 400,
-				"message":     fmt.Sprintf("Failed to subscribe to topic: %v", err),
-			},
-		})
+		sendErrorResponse(c, http.StatusBadRequest, fmt.Sprintf("Failed to subscribe to topic: %v", err))
 		return
 	}
 
 	// Log subscription result
 	log.Printf("Topic subscription result - Success: %d, Failures: %d", response.SuccessCount, response.FailureCount)
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": gin.H{
-			"success": 200,
-			"message": fmt.Sprintf("User subscribed to topic %s. Success: %d, Failures: %d",
-				topicName, response.SuccessCount, response.FailureCount),
+	sendSuccessResponse(c, fmt.Sprintf("User subscribed to topic %s. Success: %d, Failures: %d",
+		topicName, response.SuccessCount, response.FailureCount))
+}
+
+// Add standardized error response helper
+func sendErrorResponse(c *gin.Context, statusCode int, message string) {
+	c.JSON(statusCode, gin.H{
+		"exc": gin.H{
+			"status_code": statusCode,
+			"message":     message,
 		},
 	})
 }
 
-// unsubscribeFromTopic unsubscribes a user's devices from a Firebase topic.
-// Takes project name, site name, user ID and topic name from query parameters.
-// Retrieves user's FCM tokens and unsubscribes them from the specified topic.
-// Returns success response if unsubscription succeeds, error response otherwise.
+// Add standardized success response helper
+func sendSuccessResponse(c *gin.Context, message string) {
+	c.JSON(http.StatusOK, gin.H{
+		"message": gin.H{
+			"success": 200,
+			"message": message,
+		},
+	})
+}
+
+// Update unsubscribeFromTopic to use standard responses
 func unsubscribeFromTopic(c *gin.Context) {
 	projectName := c.Query("project_name")
 	siteName := c.Query("site_name")
-	key := projectName + "_" + siteName
+	key := fmt.Sprintf("%s_%s", projectName, siteName)
 	userID := c.Query("user_id")
 	topicName := c.Query("topic_name")
 
+	// Validate project exists
+	if _, exists := config.Projects[projectName]; !exists {
+		sendErrorResponse(c, http.StatusNotFound, fmt.Sprintf("Project %s not found", projectName))
+		return
+	}
+
 	// Check if topic name is empty
 	if topicName == "" {
-		c.JSON(http.StatusOK, Response{
-			Message: map[string]interface{}{
-				"success": false,
-				"message": "topic_name is required",
-			},
-		})
+		sendErrorResponse(c, http.StatusBadRequest, "topic_name is required")
 		return
 	}
 
-	if tokens, exists := userDeviceMap[key][userID]; exists && len(tokens) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		_, err := messagingClient.UnsubscribeFromTopic(ctx, tokens, topicName)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"exc": gin.H{
-					"status_code": 400,
-					"message":     fmt.Sprintf("Failed to unsubscribe from topic: %v", err),
-				},
-			})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"message": gin.H{
-				"success": 200,
-				"message": fmt.Sprintf("User %s unsubscribed from %s topic", userID, topicName),
-			},
-		})
+	tokens, exists := userDeviceMap[key][userID]
+	if !exists || len(tokens) == 0 {
+		sendErrorResponse(c, http.StatusNotFound, fmt.Sprintf("%s not subscribed to push notifications", userID))
 		return
 	}
 
-	c.JSON(http.StatusBadRequest, gin.H{
-		"exc": gin.H{
-			"status_code": 404,
-			"message":     fmt.Sprintf("%s not subscribed to push notifications", userID),
-		},
-	})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := messagingClient.UnsubscribeFromTopic(ctx, tokens, topicName)
+	if err != nil {
+		sendErrorResponse(c, http.StatusBadRequest, fmt.Sprintf("Failed to unsubscribe from topic: %v", err))
+		return
+	}
+
+	sendSuccessResponse(c, fmt.Sprintf("User %s unsubscribed from %s topic", userID, topicName))
 }
 
 // addToken adds a user's FCM token to the user's device map.
@@ -433,9 +382,20 @@ func unsubscribeFromTopic(c *gin.Context) {
 func addToken(c *gin.Context) {
 	projectName := c.Query("project_name")
 	siteName := c.Query("site_name")
-	key := projectName + "_" + siteName
+	key := formatProjectKey(projectName, siteName)
 	userID := c.Query("user_id")
 	fcmToken := c.Query("fcm_token")
+
+	// Validate project exists in config
+	if _, exists := config.Projects[projectName]; !exists {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"exc": gin.H{
+				"status_code": 404,
+				"message":     fmt.Sprintf("Project %s not found", projectName),
+			},
+		})
+		return
+	}
 
 	// Check if token is empty
 	if fcmToken == "" {
@@ -448,10 +408,12 @@ func addToken(c *gin.Context) {
 		return
 	}
 
+	// Initialize project map if it doesn't exist
 	if userDeviceMap[key] == nil {
 		userDeviceMap[key] = make(map[string][]string)
 	}
 
+	// Add token to user's devices
 	if tokens, exists := userDeviceMap[key][userID]; exists {
 		// Check for duplicate token
 		for _, token := range tokens {
@@ -470,6 +432,7 @@ func addToken(c *gin.Context) {
 		userDeviceMap[key][userID] = []string{fcmToken}
 	}
 
+	// Save updated map
 	err := saveJSON(UserDeviceMapJSON, userDeviceMap)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -496,9 +459,20 @@ func addToken(c *gin.Context) {
 func removeToken(c *gin.Context) {
 	projectName := c.Query("project_name")
 	siteName := c.Query("site_name")
-	key := projectName + "_" + siteName
+	key := fmt.Sprintf("%s_%s", projectName, siteName)
 	userID := c.Query("user_id")
 	fcmToken := c.Query("fcm_token")
+
+	// Validate project exists
+	if _, exists := config.Projects[projectName]; !exists {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"exc": gin.H{
+				"status_code": 404,
+				"message":     fmt.Sprintf("Project %s not found", projectName),
+			},
+		})
+		return
+	}
 
 	if tokens, exists := userDeviceMap[key][userID]; exists {
 		for i, token := range tokens {
@@ -535,6 +509,18 @@ func removeToken(c *gin.Context) {
 
 // getUserTokens retrieves the user's tokens
 func getUserTokens(key, userID string) ([]string, error) {
+	// Split key to get project name
+	parts := strings.Split(key, "_")
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("invalid key format: %s", key)
+	}
+	projectName := parts[0]
+
+	// Validate project exists
+	if _, exists := config.Projects[projectName]; !exists {
+		return nil, fmt.Errorf("project %s not found", projectName)
+	}
+
 	tokens, exists := userDeviceMap[key][userID]
 	if !exists || len(tokens) == 0 {
 		return nil, fmt.Errorf("user %s not subscribed to push notifications", userID)
@@ -580,11 +566,32 @@ func addIconToConfig(key string, webpushConfig *messaging.WebpushConfig) {
 	}
 }
 
-// prepareWebPushConfig creates a web push notification configuration for a user.
+// applyTopicDecorations applies decorations to the notification title based on topic
+func applyTopicDecorations(topic, title string) string {
+	if decoration, exists := topicDecorations[topic]; exists {
+		matched, err := regexp.MatchString(decoration.Pattern, title)
+		if err != nil {
+			log.Printf("Error matching pattern: %v", err)
+			return title
+		}
+		if matched {
+			return strings.Replace(decoration.Template, "{title}", title, 1)
+		}
+	}
+	return title
+}
+
+// prepareWebPushConfig creates a web push notification configuration.
 // Applies decorations to the title, adds icon, and processes additional data.
-// Returns the prepared configuration and an error if data processing fails.
-func prepareWebPushConfig(key, title, body, data string) (*messaging.WebpushConfig, error) {
-	decoratedTitle := applyDecorations(key, title)
+// If topic is provided, applies topic-specific decorations instead of project decorations.
+func prepareWebPushConfig(key, title, body, data string, topic string) (*messaging.WebpushConfig, error) {
+	// Apply decorations based on whether it's a topic notification or not
+	decoratedTitle := title
+	if topic != "" {
+		decoratedTitle = applyTopicDecorations(topic, title)
+	} else {
+		decoratedTitle = applyDecorations(key, title)
+	}
 
 	webpushConfig := &messaging.WebpushConfig{
 		Notification: &messaging.WebpushNotification{
@@ -604,23 +611,69 @@ func prepareWebPushConfig(key, title, body, data string) (*messaging.WebpushConf
 				Link: clickAction,
 			}
 		}
+
+		// Handle icon from data for topic notifications
+		if topic != "" {
+			if icon, ok := dataMap["icon"].(string); ok {
+				if webpushConfig.Data == nil {
+					webpushConfig.Data = make(map[string]string)
+				}
+				webpushConfig.Data["icon"] = icon
+			}
+		}
 	}
 
-	addIconToConfig(key, webpushConfig)
+	// Only add project icon for non-topic notifications
+	if topic == "" {
+		addIconToConfig(key, webpushConfig)
+	}
+
 	return webpushConfig, nil
 }
 
-// sendNotificationToUser sends a web push notification to all user's devices.
-// Takes notification parameters from request query parameters.
-// Returns a JSON response with the sending result.
+// Add logging helpers
+func logNotificationSent(messageType, recipient string, message *messaging.Message) {
+	if msgBytes, err := json.MarshalIndent(message, "", "  "); err == nil {
+		log.Printf("Sending %s notification to %s:\n%s", messageType, recipient, string(msgBytes))
+	}
+}
+
+func logNotificationResponse(messageType, recipient, response string) {
+	log.Printf("FCM Response for %s %s: %s", messageType, recipient, response)
+}
+
+// Add helper for common notification data parsing
+func parseNotificationData(data string) (map[string]interface{}, error) {
+	var dataMap map[string]interface{}
+	if data == "" {
+		return nil, nil
+	}
+	if err := json.Unmarshal([]byte(data), &dataMap); err != nil {
+		return nil, fmt.Errorf("invalid data format: %v", err)
+	}
+	return dataMap, nil
+}
+
+// Update send functions to use helper
 func sendNotificationToUser(c *gin.Context) {
 	projectName := c.Query("project_name")
 	siteName := c.Query("site_name")
-	key := projectName + "_" + siteName
+	key := fmt.Sprintf("%s_%s", projectName, siteName)
 	userID := c.Query("user_id")
 	title := c.Query("title")
 	body := c.Query("body")
 	data := c.Query("data")
+
+	// Validate notification parameters
+	if err := validateNotificationParams(title, body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"exc": gin.H{
+				"status_code": 400,
+				"message":     err.Error(),
+			},
+		})
+		return
+	}
 
 	// Get user's tokens first
 	tokens, err := getUserTokens(key, userID)
@@ -634,21 +687,22 @@ func sendNotificationToUser(c *gin.Context) {
 		return
 	}
 
-	// Parse the data JSON for notification settings
-	var dataMap map[string]interface{}
-	if err := json.Unmarshal([]byte(data), &dataMap); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"exc": gin.H{
-				"status_code": 400,
-				"message":     fmt.Sprintf("Invalid data format: %v", err),
-			},
-		})
+	// Prepare web push config (pass empty topic string)
+	webpushConfig, err := prepareWebPushConfig(key, title, body, data, "")
+	if err != nil {
+		sendErrorResponse(c, http.StatusBadRequest, fmt.Sprintf("Failed to prepare notification: %v", err))
 		return
 	}
 
-	// Check if the notification is for the sender
+	// Parse the data for notification settings
+	dataMap, err := parseNotificationData(data)
+	if err != nil {
+		sendErrorResponse(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Skip sending notification to self
 	if fromUser, ok := dataMap["from_user"].(string); ok && fromUser == userID {
-		// Skip sending notification to self
 		c.JSON(http.StatusOK, gin.H{
 			"message": gin.H{
 				"success": 200,
@@ -659,43 +713,7 @@ func sendNotificationToUser(c *gin.Context) {
 	}
 
 	// Convert data fields to string values for FCM
-	dataMapStr := convertToStringMap(dataMap)
-
-	// Get notification icon and click_action from original dataMap
-	notificationIcon := ""
-	if icon, ok := dataMap["notification_icon"].(string); ok {
-		notificationIcon = icon
-	}
-
-	// Prepare web push config
-	webpushConfig := &messaging.WebpushConfig{
-		Notification: &messaging.WebpushNotification{
-			Title: title,
-			Body:  body,
-			Icon:  notificationIcon,
-		},
-	}
-
-	// Add click_action if present in original dataMap
-	if clickAction, ok := dataMap["click_action"].(string); ok {
-		webpushConfig.FCMOptions = &messaging.WebpushFCMOptions{
-			Link: clickAction,
-		}
-	}
-
-	// Add icon if configured
-	addIconToConfig(key, webpushConfig)
-
-	// Create a map for notification data
-	notificationData := map[string]string{
-		"title": title,
-		"body":  body,
-	}
-
-	// Add all fields from dataMap to notificationData
-	for k, v := range dataMapStr {
-		notificationData[k] = v
-	}
+	notificationData := convertToStringMap(dataMap)
 
 	// Send notification to all user tokens
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -706,27 +724,22 @@ func sendNotificationToUser(c *gin.Context) {
 		message := &messaging.Message{
 			Token:   token,
 			Webpush: webpushConfig,
-			Data:    notificationData, // Send combined data
+			Data:    notificationData,
 		}
 
-		// Log the outgoing message
-		log.Printf("Sending FCM message to token %s:", token)
-		if msgBytes, err := json.MarshalIndent(message, "", "  "); err == nil {
-			log.Printf("Message payload:\n%s", string(msgBytes))
-		}
+		logNotificationSent("user", token, message)
 
-		// Send the message
 		response, err := messagingClient.Send(ctx, message)
 		if err != nil {
 			log.Printf("Failed to send notification to token %s: %v", token, err)
 			continue
 		}
 
-		log.Printf("FCM Response for token %s: %s", token, response)
+		logNotificationResponse("token", token, response)
 		validTokens = append(validTokens, token)
 	}
 
-	// Return response
+	// Return response based on success
 	if len(validTokens) > 0 {
 		c.JSON(http.StatusOK, gin.H{
 			"message": gin.H{
@@ -745,206 +758,52 @@ func sendNotificationToUser(c *gin.Context) {
 	})
 }
 
-// applyTopicDecorations applies decorations to the notification title based on topic
-func applyTopicDecorations(topic, title string) string {
-	if decoration, exists := topicDecorations[topic]; exists {
-		matched, err := regexp.MatchString(decoration.Pattern, title)
-		if err != nil {
-			log.Printf("Error matching pattern: %v", err)
-			return title
-		}
-		if matched {
-			return strings.Replace(decoration.Template, "{title}", title, 1)
-		}
-	}
-	return title
-}
-
-// prepareTopicWebPushConfig creates a web push notification configuration for a topic
-func prepareTopicWebPushConfig(topic, title, body, data string) (*messaging.WebpushConfig, error) {
-	// Apply decorations to the title based on topic
-	decoratedTitle := applyTopicDecorations(topic, title)
-
-	webpushConfig := &messaging.WebpushConfig{
-		Notification: &messaging.WebpushNotification{
-			Title: decoratedTitle,
-			Body:  body,
-		},
-	}
-
-	if data != "" {
-		var dataMap map[string]interface{}
-		if err := json.Unmarshal([]byte(data), &dataMap); err != nil {
-			return nil, fmt.Errorf("invalid data format: %v", err)
-		}
-
-		if clickAction, ok := dataMap["click_action"].(string); ok {
-			webpushConfig.FCMOptions = &messaging.WebpushFCMOptions{
-				Link: clickAction,
-			}
-		}
-
-		if icon, ok := dataMap["icon"].(string); ok {
-			if webpushConfig.Data == nil {
-				webpushConfig.Data = make(map[string]string)
-			}
-			webpushConfig.Data["icon"] = icon
-		}
-	}
-
-	return webpushConfig, nil
-}
-
 // sendNotificationToTopic sends a web push notification to a Firebase topic.
 // Takes topic name, title, body and additional data from query parameters.
 // Returns a JSON response with the sending result.
 func sendNotificationToTopic(c *gin.Context) {
 	topic := c.Query("topic_name")
+	projectName := c.Query("project_name")
+	siteName := c.Query("site_name")
+	key := formatProjectKey(projectName, siteName)
 	title := c.Query("title")
 	body := c.Query("body")
 	data := c.Query("data")
 
+	// Validate project exists
+	if err := validateProject(projectName); err != nil {
+		sendErrorResponse(c, http.StatusNotFound, err.Error())
+		return
+	}
+
 	// Check if topic name is empty
 	if topic == "" {
-		c.JSON(http.StatusOK, Response{
-			Message: map[string]interface{}{
-				"success": false,
-				"message": "topic_name is required",
-			},
-		})
+		sendErrorResponse(c, http.StatusBadRequest, "topic_name is required")
 		return
 	}
 
-	// Check required parameters
+	// Validate notification parameters
 	if err := validateNotificationParams(title, body); err != nil {
-		c.JSON(http.StatusOK, Response{
-			Message: map[string]interface{}{
-				"success": false,
-				"message": err.Error(),
-			},
-		})
+		sendErrorResponse(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	// Parse the data JSON for notification settings
-	var dataMap map[string]interface{}
-	if err := json.Unmarshal([]byte(data), &dataMap); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"exc": gin.H{
-				"status_code": 400,
-				"message":     fmt.Sprintf("Invalid data format: %v", err),
-			},
-		})
+	// Prepare web push config (pass topic for topic-specific handling)
+	webpushConfig, err := prepareWebPushConfig(key, title, body, data, topic)
+	if err != nil {
+		sendErrorResponse(c, http.StatusBadRequest, fmt.Sprintf("Failed to prepare notification: %v", err))
 		return
 	}
 
-	// Check if the notification is from the current user
-	if fromUser, ok := dataMap["from_user"].(string); ok {
-		// Get current user's tokens
-		projectName := c.Query("project_name")
-		siteName := c.Query("site_name")
-		key := projectName + "_" + siteName
-
-		// Get user's tokens
-		if tokens, exists := userDeviceMap[key][fromUser]; exists && len(tokens) > 0 {
-			// Unsubscribe sender's tokens temporarily
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-
-			_, err := messagingClient.UnsubscribeFromTopic(ctx, tokens, topic)
-			if err != nil {
-				log.Printf("Failed to unsubscribe sender from topic: %v", err)
-			}
-
-			// Send notification
-			err = sendTopicNotification(c, topic, title, body, dataMap)
-
-			// Resubscribe sender's tokens
-			_, resubErr := messagingClient.SubscribeToTopic(ctx, tokens, topic)
-			if resubErr != nil {
-				log.Printf("Failed to resubscribe sender to topic: %v", resubErr)
-			}
-
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"exc": gin.H{
-						"status_code": 500,
-						"message":     fmt.Sprintf("Failed to send notification: %v", err),
-					},
-				})
-				return
-			}
-		} else {
-			// If sender's tokens not found, just send the notification
-			err := sendTopicNotification(c, topic, title, body, dataMap)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"exc": gin.H{
-						"status_code": 500,
-						"message":     fmt.Sprintf("Failed to send notification: %v", err),
-					},
-				})
-				return
-			}
-		}
-	} else {
-		// If no sender info, just send the notification
-		err := sendTopicNotification(c, topic, title, body, dataMap)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"exc": gin.H{
-					"status_code": 500,
-					"message":     fmt.Sprintf("Failed to send notification: %v", err),
-				},
-			})
-			return
-		}
+	// Parse notification data
+	dataMap, err := parseNotificationData(data)
+	if err != nil {
+		sendErrorResponse(c, http.StatusBadRequest, err.Error())
+		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": gin.H{
-			"success": 200,
-			"message": fmt.Sprintf("Notification sent to %s topic", topic),
-		},
-	})
-}
-
-// Helper function to send topic notification
-func sendTopicNotification(c *gin.Context, topic, title, body string, dataMap map[string]interface{}) error {
 	// Convert data fields to string values for FCM
-	dataMapStr := convertToStringMap(dataMap)
-
-	// Get notification icon
-	notificationIcon := ""
-	if icon, ok := dataMap["notification_icon"].(string); ok {
-		notificationIcon = icon
-	}
-
-	// Prepare web push config
-	webpushConfig := &messaging.WebpushConfig{
-		Notification: &messaging.WebpushNotification{
-			Title: title,
-			Body:  body,
-			Icon:  notificationIcon,
-			Tag:   fmt.Sprintf("notification-%d", time.Now().UnixNano()),
-		},
-	}
-
-	// Add click_action if present
-	if clickAction, ok := dataMap["click_action"].(string); ok {
-		webpushConfig.FCMOptions = &messaging.WebpushFCMOptions{
-			Link: clickAction,
-		}
-	}
-
-	// Create notification data
-	notificationData := map[string]string{
-		"title": title,
-		"body":  body,
-	}
-	for k, v := range dataMapStr {
-		notificationData[k] = v
-	}
+	notificationData := convertToStringMap(dataMap)
 
 	message := &messaging.Message{
 		Topic:   topic,
@@ -952,19 +811,18 @@ func sendTopicNotification(c *gin.Context, topic, title, body string, dataMap ma
 		Data:    notificationData,
 	}
 
-	// Log the outgoing message
-	if msgBytes, err := json.MarshalIndent(message, "", "  "); err == nil {
-		log.Printf("Message payload:\n%s", string(msgBytes))
-	}
+	logNotificationSent("topic", topic, message)
 
+	// Send the message
 	ctx := context.Background()
 	response, err := messagingClient.Send(ctx, message)
 	if err != nil {
-		return err
+		sendErrorResponse(c, http.StatusInternalServerError, fmt.Sprintf("Failed to send notification: %v", err))
+		return
 	}
 
-	log.Printf("FCM Response for topic %s: %s", topic, response)
-	return nil
+	logNotificationResponse("topic", topic, response)
+	sendSuccessResponse(c, fmt.Sprintf("Notification sent to %s topic", topic))
 }
 
 // Convert map[string]interface{} to map[string]string
@@ -982,4 +840,17 @@ func convertToStringMap(m map[string]interface{}) map[string]string {
 		}
 	}
 	return result
+}
+
+// Add helper for consistent key formatting
+func formatProjectKey(projectName, siteName string) string {
+	return fmt.Sprintf("%s_%s", projectName, siteName)
+}
+
+// Add project validation helper
+func validateProject(projectName string) error {
+	if _, exists := config.Projects[projectName]; !exists {
+		return fmt.Errorf("project %s not found", projectName)
+	}
+	return nil
 }

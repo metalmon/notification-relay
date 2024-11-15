@@ -13,63 +13,52 @@ print_message() {
     echo -e "${color}${message}${NC}"
 }
 
-# Function to check if a command exists
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
-}
-
-# Function to create directory with proper permissions
-create_directory() {
-    local dir=$1
-    if [ ! -d "$dir" ]; then
-        print_message "$YELLOW" "Creating directory: $dir"
-        mkdir -p "$dir"
-        chmod 750 "$dir"
-    fi
-}
-
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
     print_message "$RED" "Please run as root"
     exit 1
 fi
 
-# Check for required commands
-REQUIRED_COMMANDS="docker docker-compose"
-for cmd in $REQUIRED_COMMANDS; do
-    if ! command_exists "$cmd"; then
-        print_message "$RED" "Error: $cmd is not installed"
-        exit 1
-    fi
-done
-
-# Default installation directory
-INSTALL_DIR="/opt/notification-relay"
+# Default paths
+BINARY_PATH="/usr/local/bin/notification-relay"
 CONFIG_DIR="/etc/notification-relay"
 SERVICE_NAME="notification-relay"
+GITHUB_REPO="your-org/notification-relay"
 
-# Create directories
-create_directory "$INSTALL_DIR"
-create_directory "$CONFIG_DIR"
+# Get latest release version from GitHub
+VERSION=$(curl -s https://api.github.com/repos/${GITHUB_REPO}/releases/latest | grep '"tag_name":' | cut -d'"' -f4)
+if [ -z "$VERSION" ]; then
+    print_message "$RED" "Failed to get latest version"
+    exit 1
+fi
 
-# Copy files to installation directory
-print_message "$GREEN" "Copying files to $INSTALL_DIR"
-cp -r ./* "$INSTALL_DIR/"
+# Create config directory
+mkdir -p "$CONFIG_DIR"
+chmod 750 "$CONFIG_DIR"
+
+# Download binary
+print_message "$GREEN" "Downloading notification-relay ${VERSION}..."
+curl -L "https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/notification-relay-linux-amd64" -o "$BINARY_PATH"
+chmod 755 "$BINARY_PATH"
+
+if [ ! -f "$BINARY_PATH" ]; then
+    print_message "$RED" "Failed to download binary"
+    exit 1
+fi
 
 # Create systemd service file
 cat > "/etc/systemd/system/${SERVICE_NAME}.service" << EOF
 [Unit]
 Description=Notification Relay Service
-After=docker.service
-Requires=docker.service
+After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=${INSTALL_DIR}
 Environment=NOTIFICATION_RELAY_CONFIG=${CONFIG_DIR}/config.json
 Environment=GOOGLE_APPLICATION_CREDENTIALS=${CONFIG_DIR}/service-account.json
-ExecStart=/usr/bin/docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
-ExecStop=/usr/bin/docker-compose -f docker-compose.yml -f docker-compose.prod.yml down
+Environment=LISTEN_PORT=5000
+Environment=TRUSTED_PROXIES=127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+ExecStart=${BINARY_PATH}
 Restart=always
 User=root
 Group=root
@@ -78,10 +67,9 @@ Group=root
 WantedBy=multi-user.target
 EOF
 
-# Set proper permissions
 chmod 644 "/etc/systemd/system/${SERVICE_NAME}.service"
 
-# Check for config.json
+# Create example config if it doesn't exist
 if [ ! -f "${CONFIG_DIR}/config.json" ]; then
     print_message "$YELLOW" "Creating example config.json"
     cat > "${CONFIG_DIR}/config.json" << EOF
@@ -104,19 +92,12 @@ if [ ! -f "${CONFIG_DIR}/config.json" ]; then
 }
 EOF
     chmod 640 "${CONFIG_DIR}/config.json"
-    print_message "$YELLOW" "Please update ${CONFIG_DIR}/config.json with your Firebase configuration"
-fi
-
-# Check for service account file
-if [ ! -f "${CONFIG_DIR}/service-account.json" ]; then
-    print_message "$YELLOW" "Warning: service-account.json not found in ${CONFIG_DIR}"
-    print_message "$YELLOW" "Please copy your Firebase service account key to ${CONFIG_DIR}/service-account.json"
 fi
 
 # Reload systemd
 systemctl daemon-reload
 
-print_message "$GREEN" "Installation completed!"
+print_message "$GREEN" "Installation completed! Version: ${VERSION}"
 print_message "$GREEN" "To start the service:"
 echo "systemctl start $SERVICE_NAME"
 print_message "$GREEN" "To enable service on boot:"
@@ -125,14 +106,5 @@ print_message "$YELLOW" "Remember to:"
 echo "1. Update ${CONFIG_DIR}/config.json with your Firebase configuration"
 echo "2. Copy your service account key to ${CONFIG_DIR}/service-account.json"
 echo "3. Set appropriate permissions on configuration files"
-echo "4. Configure your trusted proxies in config.json or environment variables"
-
-# Final permission settings
-chown -R root:root "$INSTALL_DIR"
-chown -R root:root "$CONFIG_DIR"
-chmod 750 "$CONFIG_DIR"
-if [ -f "${CONFIG_DIR}/service-account.json" ]; then
-    chmod 640 "${CONFIG_DIR}/service-account.json"
-fi
 
 exit 0 

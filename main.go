@@ -157,13 +157,6 @@ func initializeFirebaseApp(content []byte) error {
 	return nil
 }
 
-// Config represents the application configuration structure
-type Config struct {
-	VapidPublicKey string                 `json:"vapid_public_key"`
-	FirebaseConfig map[string]interface{} `json:"firebase_config"`
-	TrustedProxies string                 `json:"trusted_proxies"`
-}
-
 func main() {
 	// Load configuration
 	if err := loadJSON(ConfigJSON, &config); err != nil {

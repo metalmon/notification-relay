@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  notification-relay:
+    environment:
+      # Trust all proxies for local development
+      - TRUSTED_PROXIES=*
+    volumes:
+      # Mount local config directory for development
+      - ./config:/etc/notification-relay
+      # Mount source code for live reloading (optional)
+      - .:/app
+    # Enable debug mode
+    command: ["./notification-relay"] 

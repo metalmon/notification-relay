@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  notification-relay:
+    environment:
+      # Production proxy settings - adjust according to your infrastructure
+      - TRUSTED_PROXIES=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+    volumes:
+      # Mount production config directory
+      - /etc/notification-relay:/etc/notification-relay:ro
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3" 
