@@ -38,53 +38,11 @@ This guide explains how to set up Firebase Cloud Messaging (FCM) and generate VA
    - Note your Server key and Sender ID
    - Enable Cloud Messaging API if prompted
 
-## VAPID Key Generation
-
-VAPID (Voluntary Application Server Identification) keys are required for web push notifications. Here's how to generate them:
-
-### Method 1: Using web-push Library
-
-1. Install web-push globally:
-   ```bash
-   npm install -g web-push
-   ```
-
-2. Generate VAPID keys:
-   ```bash
-   web-push generate-vapid-keys
-   ```
-
-3. Save the output - you'll need both public and private keys:
-   ```
-   =======================================
-   Public Key:
-   BDd3_hVL9fZi9Ybo2UUzA284WG5FZR30_95YeZJsiApwXKpNcF1rRPF3foIiBHXRdJI2Qhumhf6_LFTeZaNndIo
-
-   Private Key:
-   MVRxVNbyqJ4_xn2Lgk6kdzJxJWjkcpCJrMMApuH-SVk
-   =======================================
-   ```
-
-### Method 2: Using OpenSSL
-
-1. Generate VAPID private key:
-   ```bash
-   openssl ecparam -name prime256v1 -genkey -noout -out vapid_private.pem
-   ```
-
-2. Generate VAPID public key:
-   ```bash
-   openssl ec -in vapid_private.pem -pubout -out vapid_public.pem
-   ```
-
-3. Convert keys to base64url format:
-   ```bash
-   # Private key
-   openssl ec -in vapid_private.pem -outform DER | tail -c +8 | head -c 32 | base64 | tr -d '=' | tr '/+' '_-'
-
-   # Public key
-   openssl ec -in vapid_public.pem -pubin -outform DER | tail -c 65 | base64 | tr -d '=' | tr '/+' '_-'
-   ```
+5. **Generate VAPID Keys**:
+   - In the Firebase console, navigate to the **Cloud Messaging** tab under **Project settings**.
+   - Scroll down to the **Web configuration** section.
+   - In the **Web Push certificates** tab, click **Generate Key Pair**. The console will display the generated public key and private key.
+   - Save the public key for use in your application and keep the private key secure.
 
 ## Configuration
 
@@ -129,24 +87,7 @@ VAPID (Voluntary Application Server Identification) keys are required for web pu
    - Limit which domains can use your web API key
    - Consider using App Check for additional security
 
-## Troubleshooting
-
-1. Service Account Issues:
-   - Ensure the service account has the "Firebase Admin SDK" role
-   - Verify the file path is correct
-   - Check file permissions
-
-2. VAPID Key Issues:
-   - Ensure keys are properly base64url encoded
-   - Verify public key is correctly shared with clients
-   - Check for any transcription errors
-
-3. Firebase Configuration:
-   - Verify all required fields are present
-   - Check for typos in project IDs and keys
-   - Ensure Cloud Messaging API is enabled
-
 For more information, refer to:
 - [Firebase Setup Documentation](https://firebase.google.com/docs/web/setup)
 - [Web Push Documentation](https://developers.google.com/web/fundamentals/push-notifications)
-- [Firebase Admin SDK Documentation](https://firebase.google.com/docs/admin/setup) 
+- [Firebase Admin SDK Documentation](https://firebase.google.com/docs/admin/setup)

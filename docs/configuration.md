@@ -51,15 +51,15 @@ Main configuration file containing project-specific Firebase and VAPID settings.
 {
     "projects": {
         "project1": {
-            "vapid_public_key": "project1_vapid_public_key",
+            "vapid_public_key": "your-vapid-public-key",
             "firebase_config": {
-                "apiKey": "project1-firebase-api-key",
-                "authDomain": "project1.firebaseapp.com",
-                "projectId": "project1-id",
-                "storageBucket": "project1.appspot.com",
-                "messagingSenderId": "project1-sender-id",
-                "appId": "project1-app-id",
-                "measurementId": "project1-measurement-id"
+                "apiKey": "your-firebase-api-key",
+                "authDomain": "your-project.firebaseapp.com",
+                "projectId": "your-project-id",
+                "storageBucket": "your-project.appspot.com",
+                "messagingSenderId": "your-sender-id",
+                "appId": "your-app-id",
+                "measurementId": "your-measurement-id"
             }
         },
         "project2": {
@@ -78,6 +78,23 @@ Main configuration file containing project-specific Firebase and VAPID settings.
     "trusted_proxies": "127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 }
 ```
+
+## Security Considerations
+
+1. Keep your service account key secure:
+   - Never commit it to version control
+   - Set appropriate file permissions
+   - Consider using environment variables or secret management systems
+
+2. Firebase API key restrictions:
+   - Set up API key restrictions in Firebase Console
+   - Limit which domains can use your web API key
+   - Consider using App Check for additional security
+
+For more information, refer to:
+- [Firebase Setup Documentation](https://firebase.google.com/docs/web/setup)
+- [Web Push Documentation](https://developers.google.com/web/fundamentals/push-notifications)
+- [Firebase Admin SDK Documentation](https://firebase.google.com/docs/admin/setup)
 
 ## decoration.json
 This file defines notification title decoration rules for user notifications. Rules are applied based on project and pattern matching:
