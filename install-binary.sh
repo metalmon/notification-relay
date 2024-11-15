@@ -51,12 +51,17 @@ if [ -z "$LATEST_RELEASE" ]; then
     exit 1
 fi
 
-wget -q "$LATEST_RELEASE" -O /usr/local/bin/notification-relay
-chmod +x /usr/local/bin/notification-relay
+wget -q "$LATEST_RELEASE" -O /tmp/notification-relay-linux-amd64.tar.gz
+
+print_status "Installing binary..."
+tar xzf /tmp/notification-relay-linux-amd64.tar.gz -C /tmp
+mv /tmp/notification-relay-linux-amd64 "$BINARY_PATH"
+chmod +x "$BINARY_PATH"
+rm /tmp/notification-relay-linux-amd64.tar.gz
 
 # Create systemd service
 print_status "Creating systemd service..."
-cat > /etc/systemd/system/notification-relay.service << EOL
+cat > /etc/systemd/system/${SERVICE_NAME}.service << EOL
 [Unit]
 Description=Frappe Push Notification Relay Server
 After=network.target
@@ -68,7 +73,7 @@ WorkingDirectory=/etc/notification-relay
 Environment="GOOGLE_APPLICATION_CREDENTIALS=/etc/notification-relay/service-account.json"
 Environment="NOTIFICATION_RELAY_CONFIG=/etc/notification-relay/config.json"
 Environment="TRUSTED_PROXIES=127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
-ExecStart=/usr/local/bin/notification-relay
+ExecStart=${BINARY_PATH}
 Restart=always
 RestartSec=10
 
@@ -128,7 +133,7 @@ systemctl enable notification-relay
 
 print_status "Installation complete!"
 echo -e "${GREEN}Next steps:${NC}"
-echo "1. Edit /etc/notification-relay/config.json with your project configurations"
+echo "1. Edit /etc/notification-relay/config.json with your VAPID key and Firebase configuration"
 echo "2. Place your Firebase service account JSON file at:"
 echo "   - /etc/notification-relay/service-account.json"
 echo "3. Start the service with: systemctl start notification-relay"
