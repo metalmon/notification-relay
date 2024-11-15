@@ -333,34 +333,41 @@ func subscribeToTopic(c *gin.Context) {
 		return
 	}
 
-	if tokens, exists := userDeviceMap[key][userID]; exists && len(tokens) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		_, err := messagingClient.SubscribeToTopic(ctx, tokens, topicName)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"exc": gin.H{
-					"status_code": 400,
-					"message":     fmt.Sprintf("Failed to subscribe to topic: %v", err),
-				},
-			})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"message": gin.H{
-				"success": 200,
-				"message": "User subscribed",
+	// Get user tokens first using getUserTokens
+	tokens, err := getUserTokens(key, userID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"exc": gin.H{
+				"status_code": 404,
+				"message":     err.Error(),
 			},
 		})
 		return
 	}
 
-	c.JSON(http.StatusBadRequest, gin.H{
-		"exc": gin.H{
-			"status_code": 404,
-			"message":     fmt.Sprintf("%s not subscribed to push notifications", userID),
+	// Subscribe tokens to topic
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	response, err := messagingClient.SubscribeToTopic(ctx, tokens, topicName)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"exc": gin.H{
+				"status_code": 400,
+				"message":     fmt.Sprintf("Failed to subscribe to topic: %v", err),
+			},
+		})
+		return
+	}
+
+	// Log subscription result
+	log.Printf("Topic subscription result - Success: %d, Failures: %d", response.SuccessCount, response.FailureCount)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": gin.H{
+			"success": 200,
+			"message": fmt.Sprintf("User subscribed to topic %s. Success: %d, Failures: %d",
+				topicName, response.SuccessCount, response.FailureCount),
 		},
 	})
 }
@@ -639,6 +646,18 @@ func sendNotificationToUser(c *gin.Context) {
 		return
 	}
 
+	// Check if the notification is for the sender
+	if fromUser, ok := dataMap["from_user"].(string); ok && fromUser == userID {
+		// Skip sending notification to self
+		c.JSON(http.StatusOK, gin.H{
+			"message": gin.H{
+				"success": 200,
+				"message": "Skipped sending notification to self",
+			},
+		})
+		return
+	}
+
 	// Convert data fields to string values for FCM
 	dataMapStr := convertToStringMap(dataMap)
 
@@ -819,10 +838,83 @@ func sendNotificationToTopic(c *gin.Context) {
 		return
 	}
 
+	// Check if the notification is from the current user
+	if fromUser, ok := dataMap["from_user"].(string); ok {
+		// Get current user's tokens
+		projectName := c.Query("project_name")
+		siteName := c.Query("site_name")
+		key := projectName + "_" + siteName
+
+		// Get user's tokens
+		if tokens, exists := userDeviceMap[key][fromUser]; exists && len(tokens) > 0 {
+			// Unsubscribe sender's tokens temporarily
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			_, err := messagingClient.UnsubscribeFromTopic(ctx, tokens, topic)
+			if err != nil {
+				log.Printf("Failed to unsubscribe sender from topic: %v", err)
+			}
+
+			// Send notification
+			err = sendTopicNotification(c, topic, title, body, dataMap)
+
+			// Resubscribe sender's tokens
+			_, resubErr := messagingClient.SubscribeToTopic(ctx, tokens, topic)
+			if resubErr != nil {
+				log.Printf("Failed to resubscribe sender to topic: %v", resubErr)
+			}
+
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"exc": gin.H{
+						"status_code": 500,
+						"message":     fmt.Sprintf("Failed to send notification: %v", err),
+					},
+				})
+				return
+			}
+		} else {
+			// If sender's tokens not found, just send the notification
+			err := sendTopicNotification(c, topic, title, body, dataMap)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"exc": gin.H{
+						"status_code": 500,
+						"message":     fmt.Sprintf("Failed to send notification: %v", err),
+					},
+				})
+				return
+			}
+		}
+	} else {
+		// If no sender info, just send the notification
+		err := sendTopicNotification(c, topic, title, body, dataMap)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"exc": gin.H{
+					"status_code": 500,
+					"message":     fmt.Sprintf("Failed to send notification: %v", err),
+				},
+			})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": gin.H{
+			"success": 200,
+			"message": fmt.Sprintf("Notification sent to %s topic", topic),
+		},
+	})
+}
+
+// Helper function to send topic notification
+func sendTopicNotification(c *gin.Context, topic, title, body string, dataMap map[string]interface{}) error {
 	// Convert data fields to string values for FCM
 	dataMapStr := convertToStringMap(dataMap)
 
-	// Get notification icon from original dataMap
+	// Get notification icon
 	notificationIcon := ""
 	if icon, ok := dataMap["notification_icon"].(string); ok {
 		notificationIcon = icon
@@ -834,23 +926,22 @@ func sendNotificationToTopic(c *gin.Context) {
 			Title: title,
 			Body:  body,
 			Icon:  notificationIcon,
+			Tag:   fmt.Sprintf("notification-%d", time.Now().UnixNano()),
 		},
 	}
 
-	// Add click_action if present in original dataMap
+	// Add click_action if present
 	if clickAction, ok := dataMap["click_action"].(string); ok {
 		webpushConfig.FCMOptions = &messaging.WebpushFCMOptions{
 			Link: clickAction,
 		}
 	}
 
-	// Create a map for notification data
+	// Create notification data
 	notificationData := map[string]string{
 		"title": title,
 		"body":  body,
 	}
-
-	// Add all fields from dataMap to notificationData
 	for k, v := range dataMapStr {
 		notificationData[k] = v
 	}
@@ -858,11 +949,10 @@ func sendNotificationToTopic(c *gin.Context) {
 	message := &messaging.Message{
 		Topic:   topic,
 		Webpush: webpushConfig,
-		Data:    notificationData, // Send combined data
+		Data:    notificationData,
 	}
 
 	// Log the outgoing message
-	log.Printf("Sending FCM message to topic %s:", topic)
 	if msgBytes, err := json.MarshalIndent(message, "", "  "); err == nil {
 		log.Printf("Message payload:\n%s", string(msgBytes))
 	}
@@ -870,23 +960,11 @@ func sendNotificationToTopic(c *gin.Context) {
 	ctx := context.Background()
 	response, err := messagingClient.Send(ctx, message)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"exc": gin.H{
-				"status_code": 500,
-				"message":     fmt.Sprintf("Failed to send notification: %v", err),
-			},
-		})
-		return
+		return err
 	}
 
 	log.Printf("FCM Response for topic %s: %s", topic, response)
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": gin.H{
-			"success": 200,
-			"message": fmt.Sprintf("Notification sent to %s topic", topic),
-		},
-	})
+	return nil
 }
 
 // Convert map[string]interface{} to map[string]string
