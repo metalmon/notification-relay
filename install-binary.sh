@@ -23,12 +23,30 @@ fi
 BINARY_PATH="/usr/local/bin/notification-relay"
 CONFIG_DIR="/etc/notification-relay"
 SERVICE_NAME="notification-relay"
-GITHUB_REPO="your-org/notification-relay"
+GITHUB_REPO="frappe/notification-relay"
+
+# Check if curl is installed
+if ! command -v curl &> /dev/null; then
+    print_message "$RED" "curl is required but not installed. Please install curl first."
+    exit 1
+fi
 
 # Get latest release version from GitHub
-VERSION=$(curl -s https://api.github.com/repos/${GITHUB_REPO}/releases/latest | grep '"tag_name":' | cut -d'"' -f4)
+print_message "$YELLOW" "Checking latest version..."
+GITHUB_RESPONSE=$(curl -s -w "%{http_code}" https://api.github.com/repos/${GITHUB_REPO}/releases/latest)
+HTTP_CODE=${GITHUB_RESPONSE: -3}
+RESPONSE_BODY=${GITHUB_RESPONSE:0:${#GITHUB_RESPONSE}-3}
+
+if [ "$HTTP_CODE" != "200" ]; then
+    print_message "$RED" "Failed to get latest version. HTTP Status: $HTTP_CODE"
+    print_message "$RED" "Please check if the repository URL is correct: https://github.com/${GITHUB_REPO}"
+    exit 1
+fi
+
+VERSION=$(echo "$RESPONSE_BODY" | grep '"tag_name":' | cut -d'"' -f4)
 if [ -z "$VERSION" ]; then
-    print_message "$RED" "Failed to get latest version"
+    print_message "$RED" "No releases found in repository"
+    print_message "$RED" "Please check: https://github.com/${GITHUB_REPO}/releases"
     exit 1
 fi
 
@@ -38,7 +56,16 @@ chmod 750 "$CONFIG_DIR"
 
 # Download binary
 print_message "$GREEN" "Downloading notification-relay ${VERSION}..."
-curl -L "https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/notification-relay-linux-amd64" -o "$BINARY_PATH"
+DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/notification-relay-linux-amd64"
+DOWNLOAD_RESPONSE=$(curl -L -s -w "%{http_code}" "$DOWNLOAD_URL" -o "$BINARY_PATH")
+
+if [ "$DOWNLOAD_RESPONSE" != "200" ]; then
+    print_message "$RED" "Failed to download binary. HTTP Status: $DOWNLOAD_RESPONSE"
+    print_message "$RED" "URL: $DOWNLOAD_URL"
+    rm -f "$BINARY_PATH"
+    exit 1
+fi
+
 chmod 755 "$BINARY_PATH"
 
 if [ ! -f "$BINARY_PATH" ]; then

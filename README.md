@@ -14,15 +14,24 @@ A service for managing web push notifications across multiple projects using Fir
 
 ## Quick Install (Linux)
 
+### Prerequisites
+- curl
+- systemd
+- root access
+
 ### Option 1: One-line Install
 ```bash
-curl -sSL https://raw.githubusercontent.com/your-org/notification-relay/main/install-binary.sh | sudo bash
+# First, check if curl is installed
+which curl || sudo apt-get install -y curl
+
+# Then run the installer
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/frappe/notification-relay/main/install-binary.sh)"
 ```
 
 ### Option 2: Manual Install
 1. Download the install script:
    ```bash
-   wget https://raw.githubusercontent.com/your-org/notification-relay/main/install-binary.sh
+   curl -O https://raw.githubusercontent.com/frappe/notification-relay/main/install-binary.sh
    chmod +x install-binary.sh
    ```
 
