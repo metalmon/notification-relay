@@ -4,7 +4,7 @@ COMMIT=$(shell git rev-parse --short HEAD)
 BRANCH=$(shell git rev-parse --abbrev-ref HEAD)
 TAG=$(shell git describe --tags |cut -d- -f1)
 
-LDFLAGS = -ldflags "-X main.gitTag=${TAG} -X main.gitCommit=${COMMIT} -X main.gitBranch=${BRANCH}"
+LDFLAGS = -X main.gitTag=${TAG} -X main.gitCommit=${COMMIT} -X main.gitBranch=${BRANCH}
 
 # Test configuration
 TEST_CONFIG_DIR := $(shell pwd)/testdata
@@ -27,7 +27,7 @@ dep: ## Download the dependencies.
 
 build: dep ## Build notification-relay executable.
 	mkdir -p ./bin
-	CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH} go build ${LDFLAGS} -o bin/${PROGRAM_NAME}
+	CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH} GIN_MODE=release go build -trimpath -ldflags "-s -w ${LDFLAGS}" -o bin/${PROGRAM_NAME}
 
 release: build ## Create release archive
 	cd bin && tar czf ${PROGRAM_NAME}.tar.gz ${PROGRAM_NAME}
