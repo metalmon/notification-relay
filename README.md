@@ -14,24 +14,15 @@ A service for managing web push notifications across multiple projects using Fir
 
 ## Quick Install (Linux)
 
-### Prerequisites
-- curl
-- systemd
-- root access
-
 ### Option 1: One-line Install
 ```bash
-# First, check if curl is installed
-which curl || sudo apt-get install -y curl
-
-# Then run the installer
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/frappe/notification-relay/main/install-binary.sh)"
+curl -sSL https://raw.githubusercontent.com/metalmon/notification-relay/main/install-binary.sh | sudo bash
 ```
 
 ### Option 2: Manual Install
 1. Download the install script:
    ```bash
-   curl -O https://raw.githubusercontent.com/frappe/notification-relay/main/install-binary.sh
+   curl https://raw.githubusercontent.com/metalmon/notification-relay/main/install-binary.sh
    chmod +x install-binary.sh
    ```
 
@@ -41,13 +32,15 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/frappe/notification
    ```
 
 3. Configure and start:
-   ```bash
+  ```bash
    # Update configuration
    sudo nano /etc/notification-relay/config.json
-
+  ```
+  ```bash
    # Add your service account key
    sudo cp path/to/service-account.json /etc/notification-relay/
-
+  ```
+  ```bash
    # Start and enable the service
    sudo systemctl start notification-relay
    sudo systemctl enable notification-relay
@@ -69,10 +62,30 @@ For production environments, we recommend using Docker:
    sudo cp service-account.json /etc/notification-relay/
    ```
 
-3. Run with Docker Compose:
+3. Configure environment variables:
+   ```bash
+   # Copy example environment file
+   cp .env.example .env
+
+   # Edit environment variables as needed
+   nano .env
+   ```
+
+4. Run with Docker Compose:
    ```bash
    docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
    ```
+
+### Environment Variables
+
+You can configure the service using environment variables either through the `.env` file (for Docker) or system environment:
+
+- `NOTIFICATION_RELAY_CONFIG` - Path to config.json (default: /etc/notification-relay/config.json)
+- `GOOGLE_APPLICATION_CREDENTIALS` - Path to service account JSON (default: /etc/notification-relay/service-account.json)
+- `LISTEN_PORT` - Server port (default: 5000)
+- `TRUSTED_PROXIES` - Trusted proxy CIDR ranges
+- `DOCKER_UID` - User ID for Docker container (default: 1000)
+- `DOCKER_GID` - Group ID for Docker container (default: 1000)
 
 ## Documentation
 

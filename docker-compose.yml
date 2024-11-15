@@ -4,15 +4,16 @@ services:
   notification-relay:
     build: .
     ports:
-      - "5000:5000"
+      - "${LISTEN_PORT:-5000}:5000"
     volumes:
-      - ./config:/etc/notification-relay
+      - /etc/notification-relay:/etc/notification-relay
     environment:
-      - NOTIFICATION_RELAY_CONFIG=/etc/notification-relay/config.json
-      - GOOGLE_APPLICATION_CREDENTIALS=/etc/notification-relay/service-account.json
-      - LISTEN_PORT=5000
-      - TRUSTED_PROXIES=127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      - NOTIFICATION_RELAY_CONFIG=${NOTIFICATION_RELAY_CONFIG:-/etc/notification-relay/config.json}
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-/etc/notification-relay/service-account.json}
+      - LISTEN_PORT=${LISTEN_PORT:-5000}
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
     restart: unless-stopped
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
 
 networks:
   notification-net:
