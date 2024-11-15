@@ -6,117 +6,74 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Function to print colored messages
-print_message() {
-    local color=$1
-    local message=$2
-    echo -e "${color}${message}${NC}"
+# Function to print status messages
+print_status() {
+    echo -e "${GREEN}[*]${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}[!]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[!]${NC} $1"
 }
 
 # Check if running as root
-if [ "$EUID" -ne 0 ]; then
-    print_message "$RED" "Please run as root"
+if [ "$EUID" -ne 0 ]; then 
+    print_error "Please run as root"
     exit 1
 fi
 
-# Default paths
-BINARY_PATH="/usr/local/bin/notification-relay"
-CONFIG_DIR="/etc/notification-relay"
-SERVICE_NAME="notification-relay"
-GITHUB_REPO="frappe/notification-relay"
+# Get the actual user who ran sudo (if applicable)
+REAL_USER="${SUDO_USER:-$USER}"
+REAL_UID=$(id -u "$REAL_USER")
+REAL_GID=$(id -g "$REAL_USER")
 
-# Check if curl is installed
-if ! command -v curl &> /dev/null; then
-    print_message "$RED" "curl is required but not installed. Please install curl first."
+# Create directories
+print_status "Creating directories..."
+mkdir -p /etc/notification-relay
+mkdir -p /var/log/notification-relay
+
+# Download and install binary
+print_status "Downloading latest release..."
+LATEST_RELEASE=$(curl -s https://api.github.com/repos/frappe/notification-relay/releases/latest | grep "browser_download_url.*linux-amd64" | cut -d : -f 2,3 | tr -d \")
+
+if [ -z "$LATEST_RELEASE" ]; then
+    print_error "Failed to get latest release URL"
+    print_warning "The repository might be private or has no releases yet"
     exit 1
 fi
 
-# Get latest release version from GitHub
-print_message "$YELLOW" "Checking latest version..."
-RESPONSE=$(curl -s -I "https://github.com/${GITHUB_REPO}")
-if [[ "$RESPONSE" == *"404"* ]]; then
-    print_message "$RED" "Repository not found: ${GITHUB_REPO}"
-    print_message "$YELLOW" "This script is intended for use after the repository is public."
-    print_message "$YELLOW" "For now, you can:"
-    echo "1. Build from source"
-    echo "2. Use Docker deployment"
-    echo "3. Contact the maintainers"
-    exit 1
-fi
+wget -q "$LATEST_RELEASE" -O /usr/local/bin/notification-relay
+chmod +x /usr/local/bin/notification-relay
 
-GITHUB_RESPONSE=$(curl -s -w "%{http_code}" "https://api.github.com/repos/${GITHUB_REPO}/releases/latest")
-HTTP_CODE=${GITHUB_RESPONSE: -3}
-RESPONSE_BODY=${GITHUB_RESPONSE:0:${#GITHUB_RESPONSE}-3}
-
-if [ "$HTTP_CODE" != "200" ]; then
-    print_message "$RED" "Failed to get latest version. HTTP Status: $HTTP_CODE"
-    if [ "$HTTP_CODE" == "404" ]; then
-        print_message "$YELLOW" "No releases found. The repository might be:"
-        echo "1. Private"
-        echo "2. Not yet public"
-        echo "3. Has no releases yet"
-    fi
-    print_message "$YELLOW" "Please check: https://github.com/${GITHUB_REPO}/releases"
-    exit 1
-fi
-
-VERSION=$(echo "$RESPONSE_BODY" | grep '"tag_name":' | cut -d'"' -f4)
-if [ -z "$VERSION" ]; then
-    print_message "$RED" "No releases found in repository"
-    print_message "$RED" "Please check: https://github.com/${GITHUB_REPO}/releases"
-    exit 1
-fi
-
-# Create config directory
-mkdir -p "$CONFIG_DIR"
-chmod 750 "$CONFIG_DIR"
-
-# Download binary
-print_message "$GREEN" "Downloading notification-relay ${VERSION}..."
-DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/notification-relay-linux-amd64"
-DOWNLOAD_RESPONSE=$(curl -L -s -w "%{http_code}" "$DOWNLOAD_URL" -o "$BINARY_PATH")
-
-if [ "$DOWNLOAD_RESPONSE" != "200" ]; then
-    print_message "$RED" "Failed to download binary. HTTP Status: $DOWNLOAD_RESPONSE"
-    print_message "$RED" "URL: $DOWNLOAD_URL"
-    rm -f "$BINARY_PATH"
-    exit 1
-fi
-
-chmod 755 "$BINARY_PATH"
-
-if [ ! -f "$BINARY_PATH" ]; then
-    print_message "$RED" "Failed to download binary"
-    exit 1
-fi
-
-# Create systemd service file
-cat > "/etc/systemd/system/${SERVICE_NAME}.service" << EOF
+# Create systemd service
+print_status "Creating systemd service..."
+cat > /etc/systemd/system/notification-relay.service << EOL
 [Unit]
-Description=Notification Relay Service
+Description=Frappe Push Notification Relay Server
 After=network.target
 
 [Service]
-Type=simple
-Environment=NOTIFICATION_RELAY_CONFIG=${CONFIG_DIR}/config.json
-Environment=GOOGLE_APPLICATION_CREDENTIALS=${CONFIG_DIR}/service-account.json
-Environment=LISTEN_PORT=5000
-Environment=TRUSTED_PROXIES=127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
-ExecStart=${BINARY_PATH}
+User=${REAL_USER}
+Group=${REAL_USER}
+WorkingDirectory=/etc/notification-relay
+Environment="GOOGLE_APPLICATION_CREDENTIALS=/etc/notification-relay/service-account.json"
+Environment="NOTIFICATION_RELAY_CONFIG=/etc/notification-relay/config.json"
+Environment="TRUSTED_PROXIES=127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+ExecStart=/usr/local/bin/notification-relay
 Restart=always
-User=root
-Group=root
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
-EOF
+EOL
 
-chmod 644 "/etc/systemd/system/${SERVICE_NAME}.service"
-
-# Create example config if it doesn't exist
-if [ ! -f "${CONFIG_DIR}/config.json" ]; then
-    print_message "$YELLOW" "Creating example config.json"
-    cat > "${CONFIG_DIR}/config.json" << EOF
+# Create config file if it doesn't exist
+if [ ! -f /etc/notification-relay/config.json ]; then
+    print_status "Creating default config file..."
+    cat > /etc/notification-relay/config.json << EOL
 {
     "projects": {
         "your-project": {
@@ -134,21 +91,41 @@ if [ ! -f "${CONFIG_DIR}/config.json" ]; then
     },
     "trusted_proxies": "127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 }
-EOF
-    chmod 640 "${CONFIG_DIR}/config.json"
+EOL
+    print_warning "Please edit /etc/notification-relay/config.json with your VAPID key and Firebase configuration"
 fi
 
-# Reload systemd
-systemctl daemon-reload
+# Create credentials file if it doesn't exist
+if [ ! -f /etc/notification-relay/credentials.json ]; then
+    print_status "Creating credentials file..."
+    cat > /etc/notification-relay/credentials.json << EOL
+{}
+EOL
+    chmod 600 /etc/notification-relay/credentials.json
+fi
 
-print_message "$GREEN" "Installation completed! Version: ${VERSION}"
-print_message "$GREEN" "To start the service:"
-echo "systemctl start $SERVICE_NAME"
-print_message "$GREEN" "To enable service on boot:"
-echo "systemctl enable $SERVICE_NAME"
-print_message "$YELLOW" "Remember to:"
-echo "1. Update ${CONFIG_DIR}/config.json with your Firebase configuration"
-echo "2. Copy your service account key to ${CONFIG_DIR}/service-account.json"
-echo "3. Set appropriate permissions on configuration files"
+# Set proper permissions
+print_status "Setting permissions..."
+chown -R ${REAL_UID}:${REAL_GID} /etc/notification-relay
+chmod 750 /etc/notification-relay
+chmod 640 /etc/notification-relay/config.json
+chmod 600 /etc/notification-relay/credentials.json
+
+# Set log directory permissions
+chown -R ${REAL_UID}:${REAL_GID} /var/log/notification-relay
+chmod 750 /var/log/notification-relay
+
+# Reload systemd and enable service
+print_status "Enabling service..."
+systemctl daemon-reload
+systemctl enable notification-relay
+
+print_status "Installation complete!"
+echo -e "${GREEN}Next steps:${NC}"
+echo "1. Edit /etc/notification-relay/config.json with your project configurations"
+echo "2. Place your Firebase service account JSON file at:"
+echo "   - /etc/notification-relay/service-account.json"
+echo "3. Start the service with: systemctl start notification-relay"
+echo "4. Check status with: systemctl status notification-relay"
 
 exit 0 
