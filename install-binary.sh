@@ -33,13 +33,30 @@ fi
 
 # Get latest release version from GitHub
 print_message "$YELLOW" "Checking latest version..."
-GITHUB_RESPONSE=$(curl -s -w "%{http_code}" https://api.github.com/repos/${GITHUB_REPO}/releases/latest)
+RESPONSE=$(curl -s -I "https://github.com/${GITHUB_REPO}")
+if [[ "$RESPONSE" == *"404"* ]]; then
+    print_message "$RED" "Repository not found: ${GITHUB_REPO}"
+    print_message "$YELLOW" "This script is intended for use after the repository is public."
+    print_message "$YELLOW" "For now, you can:"
+    echo "1. Build from source"
+    echo "2. Use Docker deployment"
+    echo "3. Contact the maintainers"
+    exit 1
+fi
+
+GITHUB_RESPONSE=$(curl -s -w "%{http_code}" "https://api.github.com/repos/${GITHUB_REPO}/releases/latest")
 HTTP_CODE=${GITHUB_RESPONSE: -3}
 RESPONSE_BODY=${GITHUB_RESPONSE:0:${#GITHUB_RESPONSE}-3}
 
 if [ "$HTTP_CODE" != "200" ]; then
     print_message "$RED" "Failed to get latest version. HTTP Status: $HTTP_CODE"
-    print_message "$RED" "Please check if the repository URL is correct: https://github.com/${GITHUB_REPO}"
+    if [ "$HTTP_CODE" == "404" ]; then
+        print_message "$YELLOW" "No releases found. The repository might be:"
+        echo "1. Private"
+        echo "2. Not yet public"
+        echo "3. Has no releases yet"
+    fi
+    print_message "$YELLOW" "Please check: https://github.com/${GITHUB_REPO}/releases"
     exit 1
 fi
 
