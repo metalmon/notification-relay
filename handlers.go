@@ -34,6 +34,8 @@ func getConfig(c *gin.Context) {
 	// Get project-specific config
 	projectConfig, exists := config.Projects[projectName]
 	if !exists {
+		log.Printf("[getConfig] Project %s not found. Available projects: %v",
+			projectName, getProjectNames())
 		c.JSON(http.StatusNotFound, gin.H{
 			"exc": gin.H{
 				"status_code": http.StatusNotFound,
@@ -43,34 +45,35 @@ func getConfig(c *gin.Context) {
 		return
 	}
 
-	// Check if required configuration is available
-	if projectConfig.VapidPublicKey == "" {
-		log.Printf("Error: VAPID public key is empty for project %s", projectName)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"exc": gin.H{
-				"status_code": http.StatusBadRequest,
-				"message":     "VAPID public key not configured",
-			},
-		})
-		return
+	// Create Firebase config with exact field names
+	firebaseConfig := gin.H{
+		"apiKey":            projectConfig.FirebaseConfig.ApiKey,
+		"authDomain":        projectConfig.FirebaseConfig.AuthDomain,
+		"projectId":         projectConfig.FirebaseConfig.ProjectID,
+		"messagingSenderId": projectConfig.FirebaseConfig.MessagingSenderId,
+		"appId":             projectConfig.FirebaseConfig.AppId,
+		"storageBucket":     projectConfig.FirebaseConfig.StorageBucket,
 	}
 
-	if projectConfig.FirebaseConfig == nil {
-		log.Printf("Error: Firebase config is nil for project %s", projectName)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"exc": gin.H{
-				"status_code": http.StatusBadRequest,
-				"message":     "Firebase configuration not initialized",
-			},
-		})
-		return
-	}
+	// Log the config we're about to send
+	configBytes, _ := json.MarshalIndent(firebaseConfig, "", "  ")
+	log.Printf("[getConfig] Sending Firebase config for project %s:\n%s",
+		projectName, string(configBytes))
 
-	// Return project-specific config at top level instead of wrapped in "message"
+	// Return config without the "message" wrapper
 	c.JSON(http.StatusOK, gin.H{
 		"vapid_public_key": projectConfig.VapidPublicKey,
-		"config":           projectConfig.FirebaseConfig,
+		"config":           firebaseConfig,
 	})
+}
+
+// Helper function to get list of configured projects
+func getProjectNames() []string {
+	names := make([]string, 0, len(config.Projects))
+	for name := range config.Projects {
+		names = append(names, name)
+	}
+	return names
 }
 
 // getCredential handles API credential requests by validating the request,
@@ -108,18 +111,11 @@ func getCredential(c *gin.Context) {
 	log.Printf("Original credential request - Endpoint: %s, Protocol: %s, Port: %s, Token: %s, WebhookRoute: %s",
 		req.Endpoint, req.Protocol, req.Port, req.Token, req.WebhookRoute)
 
-	// If we're running in Codespace and the request is for localhost, use the forwarded host
-	forwardedHost := c.Request.Header.Get("X-Forwarded-Host")
-	if req.Endpoint == "localhost" && forwardedHost != "" {
-		// Extract the actual client's host from forwarded headers
-		clientHost := strings.Split(c.Request.Header.Get("X-Forwarded-For"), ",")[0]
-		log.Printf("Detected Codespace environment. Using client host: %s", clientHost)
-		req.Endpoint = clientHost
-		req.Protocol = "http" // Force HTTP for local development
+	// Force HTTP for localhost
+	if req.Endpoint == "localhost" || req.Endpoint == "127.0.0.1" {
+		log.Printf("[getCredential] Forcing HTTP protocol for localhost")
+		req.Protocol = "http"
 	}
-
-	log.Printf("Modified credential request - Endpoint: %s, Protocol: %s, Port: %s",
-		req.Endpoint, req.Protocol, req.Port)
 
 	// Create HTTP client
 	client := &http.Client{
@@ -139,7 +135,7 @@ func getCredential(c *gin.Context) {
 		req.WebhookRoute,
 	)
 
-	log.Printf("Making webhook request to: %s", webhookURL)
+	log.Printf("[getCredential] Making webhook request to: %s", webhookURL)
 
 	resp, err := client.Get(webhookURL)
 	if err != nil {
@@ -661,18 +657,22 @@ func sendNotificationToUser(c *gin.Context) {
 	body := c.Query("body")
 	data := c.Query("data")
 
-	// Validate notification parameters
-	if err := validateNotificationParams(title, body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"exc": gin.H{
-				"status_code": 400,
-				"message":     err.Error(),
-			},
-		})
+	// Parse the data for notification settings
+	dataMap, err := parseNotificationData(data)
+	if err != nil {
+		sendErrorResponse(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	// Get user's tokens first
+	// Convert data fields to string values for FCM
+	notificationData := convertToStringMap(dataMap)
+
+	// Add deduplication key
+	notificationData["deduplication_id"] = fmt.Sprintf("raven_%s_%d",
+		notificationData["message_id"],
+		time.Now().UnixMilli())
+
+	// Get user's tokens
 	tokens, err := getUserTokens(key, userID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -684,47 +684,32 @@ func sendNotificationToUser(c *gin.Context) {
 		return
 	}
 
-	// Prepare web push config (pass empty topic string)
-	webpushConfig, err := prepareWebPushConfig(key, title, body, data, "")
-	if err != nil {
-		sendErrorResponse(c, http.StatusBadRequest, fmt.Sprintf("Failed to prepare notification: %v", err))
-		return
-	}
-
-	// Parse the data for notification settings
-	dataMap, err := parseNotificationData(data)
-	if err != nil {
-		sendErrorResponse(c, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	// Skip sending notification to self
-	if fromUser, ok := dataMap["from_user"].(string); ok && fromUser == userID {
-		c.JSON(http.StatusOK, gin.H{
-			"message": gin.H{
-				"success": 200,
-				"message": "Skipped sending notification to self",
-			},
-		})
-		return
-	}
-
-	// Convert data fields to string values for FCM
-	notificationData := convertToStringMap(dataMap)
-
 	// Send notification to all user tokens
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	validTokens := make([]string, 0, len(tokens))
 	for _, token := range tokens {
+		// Create message with notification and data
 		message := &messaging.Message{
-			Token:   token,
-			Webpush: webpushConfig,
-			Data:    notificationData,
+			Token: token,
+			Webpush: &messaging.WebpushConfig{
+				Notification: &messaging.WebpushNotification{
+					Title:              title,
+					Body:               body,
+					Tag:                notificationData["deduplication_id"], // Use deduplication ID as tag
+					RequireInteraction: true,
+					Renotify:           false, // Don't show duplicate notifications
+				},
+				FCMOptions: &messaging.WebpushFCMOptions{
+					Link: notificationData["click_action"],
+				},
+				Data: notificationData,
+			},
 		}
 
-		logNotificationSent("user", token, message)
+		log.Printf("[sendNotificationToUser] Sending notification with data: %+v", notificationData)
+		log.Printf("[sendNotificationToUser] Full message: %+v", message)
 
 		response, err := messagingClient.Send(ctx, message)
 		if err != nil {
@@ -732,7 +717,7 @@ func sendNotificationToUser(c *gin.Context) {
 			continue
 		}
 
-		logNotificationResponse("token", token, response)
+		log.Printf("[sendNotificationToUser] Successfully sent notification: %s", response)
 		validTokens = append(validTokens, token)
 	}
 
@@ -853,4 +838,8 @@ func validateProject(projectName string) error {
 		return fmt.Errorf("project %s not found", projectName)
 	}
 	return nil
+}
+
+func ptr(i int64) *int64 {
+	return &i
 }

@@ -3,14 +3,15 @@ package main
 // Config represents the application configuration structure
 type Config struct {
 	Projects       map[string]ProjectConfig `json:"projects"`
-	TrustedProxies string                   `json:"trusted_proxies"`
+	TrustedProxies string                   `json:"trusted_proxies,omitempty"`
+	AllowedOrigins []string                 `json:"allowed_origins"`
 }
 
 // ProjectConfig represents project-specific Firebase configuration
 type ProjectConfig struct {
-	VapidPublicKey string                 `json:"vapid_public_key"`
-	FirebaseConfig map[string]interface{} `json:"firebase_config"`
-	Exc            string                 `json:"exc,omitempty"`
+	VapidPublicKey string         `json:"vapid_public_key"`
+	FirebaseConfig FirebaseConfig `json:"firebase_config"`
+	Exc            string         `json:"exc,omitempty"`
 }
 
 // ConfigResponse represents the response structure for the getConfig endpoint
@@ -72,4 +73,14 @@ type NotificationPayload struct {
 	Data        map[string]string `json:"data,omitempty"`
 	Icon        string            `json:"icon,omitempty"`
 	ClickAction string            `json:"click_action,omitempty"`
+}
+
+// FirebaseConfig represents the Firebase configuration structure
+type FirebaseConfig struct {
+	ApiKey            string `json:"apiKey"`
+	AuthDomain        string `json:"authDomain"`
+	ProjectID         string `json:"projectId"`
+	StorageBucket     string `json:"storageBucket"`
+	MessagingSenderId string `json:"messagingSenderId"`
+	AppId             string `json:"appId"`
 }

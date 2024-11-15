@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  notification-relay:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: notification-relay-dev
+    restart: unless-stopped
+    environment:
+      - LISTEN_PORT=5000
+      - NOTIFICATION_RELAY_CONFIG=/etc/notification-relay/config.json
+      - GOOGLE_APPLICATION_CREDENTIALS=/etc/notification-relay/service-account.json
+      - TRUSTED_PROXIES=*
+      - ALLOWED_ORIGINS=http://localhost:8000,https://*.app.github.dev
+    volumes:
+      - ./config:/etc/notification-relay:ro
+    ports:
+      - "5000:5000"
+    networks:
+      - proxy-network
+
+networks:
+  proxy-network:
+    external: true 

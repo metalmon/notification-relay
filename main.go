@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"strings"
 
@@ -158,6 +159,34 @@ func initializeFirebaseApp(content []byte) error {
 	return nil
 }
 
+func getAllowedOrigins() []string {
+	// Check environment variable first
+	envOrigins := os.Getenv("ALLOWED_ORIGINS")
+	log.Printf("[CORS] ALLOWED_ORIGINS env var: '%s'", envOrigins)
+
+	if envOrigins != "" {
+		// Special case for "*"
+		if envOrigins == "*" {
+			log.Printf("[CORS] Using wildcard (*) for allowed origins")
+			return []string{"*"}
+		}
+		// Split comma-separated list
+		origins := strings.Split(envOrigins, ",")
+		log.Printf("[CORS] Using origins from env: %v", origins)
+		return origins
+	}
+
+	// Fallback to config file
+	if len(config.AllowedOrigins) > 0 {
+		log.Printf("[CORS] Using origins from config: %v", config.AllowedOrigins)
+		return config.AllowedOrigins
+	}
+
+	// Default to restrictive setting
+	log.Printf("[CORS] No origins configured, using empty list")
+	return []string{}
+}
+
 func main() {
 	// Load configuration
 	if err := loadJSON(ConfigJSON, &config); err != nil {
@@ -178,22 +207,60 @@ func main() {
 	// Setup router
 	router := gin.Default()
 
-	// Add CORS middleware - Allow all origins
+	// Add CORS middleware with logging and origin validation
 	router.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*") // Allow any origin
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Authorization, Content-Type")
+		origin := c.Request.Header.Get("Origin")
+		allowedOrigins := getAllowedOrigins()
 
-		// Add Service Worker headers with more specific configuration
-		c.Writer.Header().Set("Service-Worker-Allowed", "/")
-		c.Writer.Header().Set("Service-Worker-Navigation-Preload", "true")
-		c.Writer.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
-		c.Writer.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
-		c.Writer.Header().Set("Cross-Origin-Resource-Policy", "cross-origin")
+		log.Printf("[CORS] Request from origin: %s", origin)
+		log.Printf("[CORS] Allowed origins: %v", allowedOrigins)
+		log.Printf("[CORS] Request method: %s", c.Request.Method)
+		log.Printf("[CORS] Request path: %s", c.Request.URL.Path)
 
-		// Handle preflight requests
+		// Check if origin is allowed
+		originAllowed := false
+		if origin != "" {
+			// Special case: allow all origins
+			if len(allowedOrigins) == 1 && allowedOrigins[0] == "*" {
+				log.Printf("[CORS] Wildcard origin configured, allowing: %s", origin)
+				originAllowed = true
+				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			} else {
+				for _, allowed := range allowedOrigins {
+					if allowed == origin {
+						log.Printf("[CORS] Origin %s matched allowed origin %s", origin, allowed)
+						originAllowed = true
+						break
+					}
+				}
+				if originAllowed {
+					c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+				}
+			}
+
+			if !originAllowed {
+				log.Printf("[CORS] Rejected request from unauthorized origin: %s. Allowed origins: %v",
+					origin, allowedOrigins)
+				c.AbortWithStatus(http.StatusForbidden)
+				return
+			}
+
+			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		} else {
+			log.Printf("[CORS] No origin header, using wildcard")
+			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
+		c.Writer.Header().Set("Access-Control-Max-Age", "86400")
+
+		// Log response headers
+		log.Printf("[CORS] Response headers: %+v", c.Writer.Header())
+
 		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(200)
+			log.Printf("[CORS] Handling OPTIONS preflight request")
+			c.AbortWithStatus(http.StatusOK)
 			return
 		}
 
@@ -243,12 +310,12 @@ func main() {
 	if port == "" {
 		port = "5000"
 	}
+
 	log.Printf("Starting server on port %s", port)
-	if err := router.Run(":" + port); err != nil {
+	if err := router.Run("0.0.0.0:" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
-
 func setTrustedProxies(router *gin.Engine, trustedProxies string) error {
 	trustedProxies = strings.TrimSpace(trustedProxies)
 

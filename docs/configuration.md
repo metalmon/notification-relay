@@ -17,6 +17,11 @@
   - `none`: Trust no proxies
   - Default: `127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`
 
+- `ALLOWED_ORIGINS`: Comma-separated list of allowed origins for CORS. Special values:
+  - `*`: Allow all origins (not recommended for production)
+  - Empty: Use values from config.json
+  - Example: `https://app1.com,https://app2.com,http://localhost:8000`
+
 ## Proxy Configuration
 
 The server requires trusted proxy configuration for proper handling of client IP addresses behind reverse proxies. This can be set in two ways:
@@ -33,6 +38,113 @@ Example CIDR configurations:
 - Local proxy: `127.0.0.1/32`
 - Private networks: `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`
 - Cloud provider: `35.190.247.0/24`
+
+## CORS Configuration
+
+CORS (Cross-Origin Resource Sharing) can be configured in two ways:
+
+1. Through `config.json` using the `allowed_origins` field:
+```json
+{
+    "projects": {
+        "project1": {
+            "vapid_public_key": "your-vapid-public-key",
+            "firebase_config": {
+                "apiKey": "your-firebase-api-key",
+                "authDomain": "your-project.firebaseapp.com",
+                "projectId": "your-project-id",
+                "storageBucket": "your-project.appspot.com",
+                "messagingSenderId": "your-sender-id",
+                "appId": "your-app-id",
+                "measurementId": "your-measurement-id"
+            }
+        },
+        "project2": {
+            "vapid_public_key": "project2_vapid_public_key",
+            "firebase_config": {
+                "apiKey": "project2-firebase-api-key",
+                "authDomain": "project2.firebaseapp.com",
+                "projectId": "project2-id",
+                "storageBucket": "project2.appspot.com",
+                "messagingSenderId": "project2-sender-id",
+                "appId": "project2-app-id",
+                "measurementId": "project2-measurement-id"
+            }
+        }
+    },
+    "trusted_proxies": "127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
+    "allowed_origins": [
+        "https://your-app.com",
+        "https://app.example.com",
+        "http://localhost:8000"
+    ]
+}
+```
+
+2. Special values for `allowed_origins`:
+   - `["*"]` - Allow all origins (not recommended for production)
+   - Empty array `[]` - Block all cross-origin requests
+   - Specific domains - Most secure option
+
+### CORS Security Levels
+
+1. **Development** (least secure):
+```json
+{
+    "allowed_origins": ["*"]
+}
+```
+
+2. **Testing** (more secure):
+```json
+{
+    "allowed_origins": [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "https://*.github.dev"
+    ]
+}
+```
+
+3. **Production** (most secure):
+```json
+{
+    "allowed_origins": [
+        "https://your-app.com",
+        "https://app.your-domain.com"
+    ]
+}
+```
+
+### CORS Headers
+
+The server sets the following CORS headers based on the request:
+
+- For requests with Origin header:
+  ```
+  Access-Control-Allow-Origin: [matching origin]
+  Access-Control-Allow-Credentials: true
+  ```
+
+- For requests without Origin header:
+  ```
+  Access-Control-Allow-Origin: *
+  ```
+
+Common headers for all requests:
+```
+Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
+Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept, Authorization
+Access-Control-Max-Age: 86400
+```
+
+### Security Considerations
+
+1. Never use `"*"` in production environments
+2. Always specify exact domains in production
+3. Use HTTPS URLs in production
+4. Consider using environment-specific configurations
+5. Monitor and log rejected CORS requests
 
 ## File Structure
 The server uses several JSON configuration files:

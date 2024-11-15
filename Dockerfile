@@ -15,7 +15,7 @@ RUN go mod download
 COPY . .
 
 # Build the binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o notification-relay-linux-amd64
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o notification-relay
 
 # Final stage
 FROM alpine:latest
@@ -39,8 +39,8 @@ RUN mkdir -p /etc/notification-relay && \
     chmod 750 /etc/notification-relay
 
 # Copy binary from builder
-COPY --from=builder /app/notification-relay-linux-amd64 /usr/local/bin/notification-relay-linux-amd64
-RUN chmod +x /usr/local/bin/notification-relay-linux-amd64
+COPY --from=builder /app/notification-relay /usr/local/bin/notification-relay
+RUN chmod +x /usr/local/bin/notification-relay
 
 # Use frappe user
 USER frappe
@@ -55,4 +55,4 @@ ENV TRUSTED_PROXIES="127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 # Expose port (using environment variable)
 EXPOSE ${LISTEN_PORT}
 
-ENTRYPOINT ["/usr/local/bin/notification-relay-linux-amd64"]
+ENTRYPOINT ["/usr/local/bin/notification-relay"]

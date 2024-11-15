@@ -2,24 +2,41 @@ version: '3.8'
 
 services:
   notification-relay:
+    image: notification-relay:latest
+    container_name: notification-relay
+    restart: unless-stopped
     environment:
-      # Production proxy settings - adjust according to your infrastructure
-      - TRUSTED_PROXIES=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      - LISTEN_PORT=5000
+      - NOTIFICATION_RELAY_CONFIG=/etc/notification-relay/config.json
+      - GOOGLE_APPLICATION_CREDENTIALS=/etc/notification-relay/service-account.json
+      # Trusted proxies configuration
+      - TRUSTED_PROXIES=127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      # CORS configuration
+      - ALLOWED_ORIGINS=https://your-production-app.com,https://app.your-domain.com
     volumes:
-      # Mount production config directory
-      - /etc/notification-relay:/etc/notification-relay:ro
-    deploy:
-      replicas: 2
-      update_config:
-        parallelism: 1
-        delay: 10s
-      restart_policy:
-        condition: any
-        delay: 5s
-        max_attempts: 3
-        window: 120s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3" 
+      - ./config:/etc/notification-relay:ro
+    ports:
+      - "5000:5000"
+    networks:
+      - proxy-network
+
+networks:
+  proxy-network:
+    external: true
+
+deploy:
+  replicas: 2
+  update_config:
+    parallelism: 1
+    delay: 10s
+  restart_policy:
+    condition: any
+    delay: 5s
+    max_attempts: 3
+    window: 120s
+
+logging:
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3" 
