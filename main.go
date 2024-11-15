@@ -66,6 +66,7 @@ var initFirebase = func() error {
 }
 
 func init() {
+	gin.SetMode(gin.ReleaseMode)
 	// Check for service account path in environment
 	serviceAccountPath = os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
 	if serviceAccountPath == "" {
