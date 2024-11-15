@@ -19,7 +19,7 @@ import (
 
 func getConfig(c *gin.Context) {
 	projectName := c.Query("project_name")
-	log.Printf("Get config request for project: %s", projectName)
+	log.Printf("[getConfig] Request received - Project: %s", projectName)
 
 	if projectName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -79,6 +79,8 @@ func getConfig(c *gin.Context) {
 // It expects a CredentialRequest with endpoint, protocol, port, token and webhook route.
 // Returns a CredentialResponse with success status and either credentials or error message.
 func getCredential(c *gin.Context) {
+	log.Printf("[getCredential] Request received with headers: %+v", c.Request.Header)
+
 	var req CredentialRequest
 
 	// Try to get parameters from query string first
@@ -103,46 +105,30 @@ func getCredential(c *gin.Context) {
 		}
 	}
 
-	// Log the request details
-	log.Printf("Credential request - Endpoint: %s, Protocol: %s, Port: %s, Token: %s, WebhookRoute: %s",
+	log.Printf("Original credential request - Endpoint: %s, Protocol: %s, Port: %s, Token: %s, WebhookRoute: %s",
 		req.Endpoint, req.Protocol, req.Port, req.Token, req.WebhookRoute)
 
-	// Validate the request
-	if req.Endpoint == "" || req.Token == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"message": gin.H{
-				"success": false,
-				"message": "Missing required fields",
-			},
-		})
-		return
+	// If we're running in Codespace and the request is for localhost, use the forwarded host
+	forwardedHost := c.Request.Header.Get("X-Forwarded-Host")
+	if req.Endpoint == "localhost" && forwardedHost != "" {
+		// Extract the actual client's host from forwarded headers
+		clientHost := strings.Split(c.Request.Header.Get("X-Forwarded-For"), ",")[0]
+		log.Printf("Detected Codespace environment. Using client host: %s", clientHost)
+		req.Endpoint = clientHost
+		req.Protocol = "http" // Force HTTP for local development
 	}
 
-	// Create HTTP client with options based on the endpoint
+	log.Printf("Modified credential request - Endpoint: %s, Protocol: %s, Port: %s",
+		req.Endpoint, req.Protocol, req.Port)
+
+	// Create HTTP client
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
 
-	// For localhost, if protocol is HTTPS:
-	// Option 1: Switch to HTTP
-	webhookProtocol := req.Protocol
-	if req.Endpoint == "localhost" && req.Protocol == "https" {
-		log.Printf("Switching to HTTP for localhost")
-		webhookProtocol = "http"
-	}
-
-	// Option 2: Or skip TLS verification for localhost
-	/*
-		if req.Endpoint == "localhost" {
-			client.Transport = &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			}
-		}
-	*/
-
-	// Verify token by making request to the site's webhook
+	// Build webhook URL
 	webhookURL := fmt.Sprintf("%s://%s%s%s",
-		webhookProtocol, // Use modified protocol
+		req.Protocol,
 		req.Endpoint,
 		func() string {
 			if req.Port != "" {
@@ -664,6 +650,9 @@ func parseNotificationData(data string) (map[string]interface{}, error) {
 
 // Update send functions to use helper
 func sendNotificationToUser(c *gin.Context) {
+	log.Printf("[sendNotificationToUser] Request received - Headers: %+v", c.Request.Header)
+	log.Printf("[sendNotificationToUser] Query params: %+v", c.Request.URL.Query())
+
 	projectName := c.Query("project_name")
 	siteName := c.Query("site_name")
 	key := fmt.Sprintf("%s_%s", projectName, siteName)
@@ -770,6 +759,9 @@ func sendNotificationToUser(c *gin.Context) {
 // Takes topic name, title, body and additional data from query parameters.
 // Returns a JSON response with the sending result.
 func sendNotificationToTopic(c *gin.Context) {
+	log.Printf("[sendNotificationToTopic] Request received - Headers: %+v", c.Request.Header)
+	log.Printf("[sendNotificationToTopic] Query params: %+v", c.Request.URL.Query())
+
 	topic := c.Query("topic_name")
 	projectName := c.Query("project_name")
 	siteName := c.Query("site_name")
