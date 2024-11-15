@@ -35,33 +35,26 @@ print_status "Creating directories..."
 mkdir -p /etc/notification-relay
 mkdir -p /var/log/notification-relay
 
-# Default paths
-BINARY_PATH="/usr/local/bin/notification-relay"
-CONFIG_DIR="/etc/notification-relay"
-SERVICE_NAME="notification-relay"
-GITHUB_REPO="metalmon/notification-relay"  # Updated to working repository
-
 # Download and install binary
 print_status "Downloading latest release..."
-LATEST_RELEASE=$(curl -s https://api.github.com/repos/${GITHUB_REPO}/releases/latest | grep "browser_download_url.*linux-amd64" | cut -d : -f 2,3 | tr -d \")
+LATEST_RELEASE=$(curl -s https://api.github.com/repos/metalmon/notification-relay/releases/latest | grep "browser_download_url.*tar.gz" | cut -d : -f 2,3 | tr -d \")
 
 if [ -z "$LATEST_RELEASE" ]; then
     print_error "Failed to get latest release URL"
-    print_warning "The repository might be private or has no releases yet"
     exit 1
 fi
 
-wget -q "$LATEST_RELEASE" -O /tmp/notification-relay-linux-amd64.tar.gz
+wget -q $LATEST_RELEASE -O /tmp/notification-relay-linux-amd64.tar.gz
 
 print_status "Installing binary..."
 tar xzf /tmp/notification-relay-linux-amd64.tar.gz -C /tmp
-mv /tmp/notification-relay-linux-amd64 "$BINARY_PATH"
-chmod +x "$BINARY_PATH"
+mv /tmp/notification-relay-linux-amd64 /usr/local/bin/notification-relay
+chmod +x /usr/local/bin/notification-relay
 rm /tmp/notification-relay-linux-amd64.tar.gz
 
 # Create systemd service
 print_status "Creating systemd service..."
-cat > /etc/systemd/system/${SERVICE_NAME}.service << EOL
+cat > /etc/systemd/system/notification-relay.service << EOL
 [Unit]
 Description=Frappe Push Notification Relay Server
 After=network.target
@@ -71,9 +64,7 @@ User=${REAL_USER}
 Group=${REAL_USER}
 WorkingDirectory=/etc/notification-relay
 Environment="GOOGLE_APPLICATION_CREDENTIALS=/etc/notification-relay/service-account.json"
-Environment="NOTIFICATION_RELAY_CONFIG=/etc/notification-relay/config.json"
-Environment="TRUSTED_PROXIES=127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
-ExecStart=${BINARY_PATH}
+ExecStart=/usr/local/bin/notification-relay
 Restart=always
 RestartSec=10
 
@@ -135,8 +126,7 @@ print_status "Installation complete!"
 echo -e "${GREEN}Next steps:${NC}"
 echo "1. Edit /etc/notification-relay/config.json with your VAPID key and Firebase configuration"
 echo "2. Place your Firebase service account JSON file at:"
-echo "   - /etc/notification-relay/service-account.json"
+echo "   - /etc/notification-relay/service-account.json, or"
+echo "   - Set GOOGLE_APPLICATION_CREDENTIALS environment variable"
 echo "3. Start the service with: systemctl start notification-relay"
-echo "4. Check status with: systemctl status notification-relay"
-
-exit 0 
+echo "4. Check status with: systemctl status notification-relay" 
