@@ -66,7 +66,7 @@ var initFirebase = func() error {
 }
 
 func init() {
-	gin.SetMode(gin.ReleaseMode)
+	//gin.SetMode(gin.ReleaseMode)
 	// Check for service account path in environment
 	serviceAccountPath = os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
 	if serviceAccountPath == "" {
@@ -226,8 +226,8 @@ func main() {
 	// API routes - make sure the path starts with a single slash
 	router.GET("/api/method/notification_relay.api.get_config", getConfig)
 	router.POST("/api/method/notification_relay.api.auth.get_credential", getCredential)
-	log.Printf("Registered route: /api/method/notification_relay.api.get_config")
-	log.Printf("Registered route: /api/method/notification_relay.api.auth.get_credential")
+	//log.Printf("Registered route: /api/method/notification_relay.api.get_config")
+	//log.Printf("Registered route: /api/method/notification_relay.api.auth.get_credential")
 
 	// Protected routes
 	auth := router.Group("/", apiBasicAuth())
@@ -243,6 +243,7 @@ func main() {
 	if port == "" {
 		port = "5000"
 	}
+	log.Printf("Starting server on port %s", port)
 	if err := router.Run(":" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
