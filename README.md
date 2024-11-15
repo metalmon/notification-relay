@@ -12,80 +12,45 @@ A service for managing web push notifications across multiple projects using Fir
 - Secure API authentication
 - Docker support
 
-## Quick Install (Linux)
+## Installation Methods
 
-### Option 1: One-line Install
+### Easy Install (Binary)
+Installs the latest release binary as a system service:
+
 ```bash
 curl -sSL https://raw.githubusercontent.com/metalmon/notification-relay/main/install-binary.sh | sudo bash
 ```
 
-### Option 2: Manual Install
-1. Download the install script:
+After installation:
+1. Configure your Firebase settings:
    ```bash
-   curl https://raw.githubusercontent.com/metalmon/notification-relay/main/install-binary.sh
-   chmod +x install-binary.sh
-   ```
-
-2. Run the installer:
-   ```bash
-   sudo ./install-binary.sh
-   ```
-
-3. Configure and start:
-  ```bash
-   # Update configuration
    sudo nano /etc/notification-relay/config.json
-  ```
-  ```bash
-   # Add your service account key
+   ```
+
+2. Add your service account key:
+   ```bash
    sudo cp path/to/service-account.json /etc/notification-relay/
-  ```
-  ```bash
-   # Start and enable the service
+   ```
+
+3. Start the service:
+   ```bash
    sudo systemctl start notification-relay
    sudo systemctl enable notification-relay
    ```
 
-## Production Deployment with Docker
+### Production Install (Docker + System Service)
+Full production installation with Docker support:
 
-For production environments, we recommend using Docker:
+```bash
+curl -sSL https://raw.githubusercontent.com/metalmon/notification-relay/main/install.sh | sudo bash
+```
 
-1. Create configuration directory:
-   ```bash
-   sudo mkdir -p /etc/notification-relay
-   ```
-
-2. Set up configuration:
-   ```bash
-   # Copy your config files
-   sudo cp config.json /etc/notification-relay/
-   sudo cp service-account.json /etc/notification-relay/
-   ```
-
-3. Configure environment variables:
-   ```bash
-   # Copy example environment file
-   cp .env.example .env
-
-   # Edit environment variables as needed
-   nano .env
-   ```
-
-4. Run with Docker Compose:
-   ```bash
-   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-   ```
-
-### Environment Variables
-
-You can configure the service using environment variables either through the `.env` file (for Docker) or system environment:
-
-- `NOTIFICATION_RELAY_CONFIG` - Path to config.json (default: /etc/notification-relay/config.json)
-- `GOOGLE_APPLICATION_CREDENTIALS` - Path to service account JSON (default: /etc/notification-relay/service-account.json)
-- `LISTEN_PORT` - Server port (default: 5000)
-- `TRUSTED_PROXIES` - Trusted proxy CIDR ranges
-- `DOCKER_UID` - User ID for Docker container (default: 1000)
-- `DOCKER_GID` - Group ID for Docker container (default: 1000)
+This method:
+- Sets up Docker containers
+- Creates system service
+- Configures logging
+- Sets up proper permissions
+- Provides production-ready deployment
 
 ## Documentation
 

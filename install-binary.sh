@@ -35,9 +35,15 @@ print_status "Creating directories..."
 mkdir -p /etc/notification-relay
 mkdir -p /var/log/notification-relay
 
+# Default paths
+BINARY_PATH="/usr/local/bin/notification-relay"
+CONFIG_DIR="/etc/notification-relay"
+SERVICE_NAME="notification-relay"
+GITHUB_REPO="metalmon/notification-relay"  # Updated to working repository
+
 # Download and install binary
 print_status "Downloading latest release..."
-LATEST_RELEASE=$(curl -s https://api.github.com/repos/frappe/notification-relay/releases/latest | grep "browser_download_url.*linux-amd64" | cut -d : -f 2,3 | tr -d \")
+LATEST_RELEASE=$(curl -s https://api.github.com/repos/${GITHUB_REPO}/releases/latest | grep "browser_download_url.*linux-amd64" | cut -d : -f 2,3 | tr -d \")
 
 if [ -z "$LATEST_RELEASE" ]; then
     print_error "Failed to get latest release URL"
