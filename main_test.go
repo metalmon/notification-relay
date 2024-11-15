@@ -421,10 +421,14 @@ func TestMainConfigLoading(t *testing.T) {
 		{
 			name: "valid config",
 			setupConfig: func() {
-				config := Config{
-					VapidPublicKey: "test-key",
-					FirebaseConfig: map[string]interface{}{
-						"projectId": "test-project",
+				config = Config{
+					Projects: map[string]ProjectConfig{
+						"test_project": {
+							VapidPublicKey: "test-key",
+							FirebaseConfig: map[string]interface{}{
+								"projectId": "test-project",
+							},
+						},
 					},
 					TrustedProxies: "127.0.0.1/32",
 				}
@@ -433,8 +437,10 @@ func TestMainConfigLoading(t *testing.T) {
 			},
 			expectError: false,
 			validate: func(t *testing.T) {
-				assert.Equal(t, "test-key", config.VapidPublicKey)
-				assert.Equal(t, "test-project", config.FirebaseConfig["projectId"])
+				projectConfig, exists := config.Projects["test_project"]
+				require.True(t, exists)
+				assert.Equal(t, "test-key", projectConfig.VapidPublicKey)
+				assert.Equal(t, "test-project", projectConfig.FirebaseConfig["projectId"])
 				assert.Equal(t, "127.0.0.1/32", config.TrustedProxies)
 			},
 		},

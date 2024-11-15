@@ -50,6 +50,21 @@ func TestLoadJSON(t *testing.T) {
 	tmpDir, cleanup := setupTestEnvironment(t)
 	defer cleanup()
 
+	// Updated testConfig with Projects map
+	testConfig := Config{
+		Projects: map[string]ProjectConfig{
+			"test_project": {
+				VapidPublicKey: "test-vapid-key",
+				FirebaseConfig: map[string]interface{}{
+					"apiKey": "test-api-key",
+				},
+			},
+		},
+		TrustedProxies: "127.0.0.1",
+	}
+
+	writeTestJSON(t, "test.json", testConfig)
+
 	tests := []struct {
 		name        string
 		setupFile   func(string) error

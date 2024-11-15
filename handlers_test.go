@@ -33,17 +33,24 @@ func TestGetConfig(t *testing.T) {
 			name: "successful config retrieval",
 			setupConfig: func() {
 				config = Config{
-					VapidPublicKey: "test-vapid-key",
-					FirebaseConfig: map[string]interface{}{
-						"apiKey": "test-firebase-key",
+					Projects: map[string]ProjectConfig{
+						"test_project": {
+							VapidPublicKey: "test-vapid-key",
+							FirebaseConfig: map[string]interface{}{
+								"apiKey": "test-firebase-key",
+							},
+						},
 					},
+					TrustedProxies: "127.0.0.1",
 				}
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody: map[string]interface{}{
-				"vapid_public_key": "test-vapid-key",
-				"config": map[string]interface{}{
-					"apiKey": "test-firebase-key",
+				"message": map[string]interface{}{
+					"vapid_public_key": "test-vapid-key",
+					"config": map[string]interface{}{
+						"apiKey": "test-firebase-key",
+					},
 				},
 			},
 		},
@@ -51,14 +58,23 @@ func TestGetConfig(t *testing.T) {
 			name: "missing vapid key",
 			setupConfig: func() {
 				config = Config{
-					FirebaseConfig: map[string]interface{}{
-						"apiKey": "test-firebase-key",
+					Projects: map[string]ProjectConfig{
+						"test_project": {
+							VapidPublicKey: "",
+							FirebaseConfig: map[string]interface{}{
+								"apiKey": "test-firebase-key",
+							},
+						},
 					},
+					TrustedProxies: "127.0.0.1",
 				}
 			},
-			expectedStatus: http.StatusInternalServerError,
+			expectedStatus: http.StatusBadRequest,
 			expectedBody: map[string]interface{}{
-				"exc": "VAPID public key not configured",
+				"exc": map[string]interface{}{
+					"status_code": 400,
+					"message":     "VAPID public key not configured",
+				},
 			},
 		},
 	}
@@ -69,6 +85,9 @@ func TestGetConfig(t *testing.T) {
 			c, _ := createTestContext(w)
 
 			tt.setupConfig()
+
+			// Setup request with project_name query parameter
+			c.Request, _ = http.NewRequest("GET", "/api/method/notification_relay.api.get_config?project_name=test_project", nil)
 
 			getConfig(c)
 
@@ -425,7 +444,7 @@ func TestPrepareWebPushConfig(t *testing.T) {
 				tt.setupData()
 			}
 
-			config, err := prepareWebPushConfig(tt.key, tt.title, tt.body, tt.data)
+			config, err := prepareWebPushConfig(tt.key, tt.title, tt.body, tt.data, "")
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -448,14 +467,6 @@ func TestSubscribeToTopic(t *testing.T) {
 	mockClient := &mocks.MockFirebaseMessagingClient{}
 	messagingClient = mockClient
 
-	// Set up test user and device
-	key := "test_project_test_site"
-	userID := "test_user"
-	token := "test_token"
-	userDeviceMap[key] = map[string][]string{
-		userID: {token},
-	}
-
 	tests := []struct {
 		name           string
 		setupMock      func()
@@ -468,21 +479,21 @@ func TestSubscribeToTopic(t *testing.T) {
 			setupMock: func() {
 				mockClient.On("SubscribeToTopic",
 					mock.Anything,
-					[]string{token},
+					[]string{"test_token"},
 					"test_topic",
-				).Return(&messaging.TopicManagementResponse{}, nil)
+				).Return(&messaging.TopicManagementResponse{SuccessCount: 1, FailureCount: 0}, nil)
 			},
 			queryParams: map[string]string{
 				"project_name": "test_project",
 				"site_name":    "test_site",
-				"user_id":      userID,
+				"user_id":      "test_user",
 				"topic_name":   "test_topic",
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody: map[string]interface{}{
 				"message": map[string]interface{}{
-					"success": true,
-					"message": "User subscribed",
+					"success": 200,
+					"message": "User subscribed to topic test_topic. Success: 1, Failures: 0",
 				},
 			},
 		},
@@ -492,7 +503,7 @@ func TestSubscribeToTopic(t *testing.T) {
 			queryParams: map[string]string{
 				"project_name": "test_project",
 				"site_name":    "test_site",
-				"user_id":      userID,
+				"user_id":      "test_user",
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody: map[string]interface{}{
@@ -524,14 +535,14 @@ func TestSubscribeToTopic(t *testing.T) {
 			setupMock: func() {
 				mockClient.On("SubscribeToTopic",
 					mock.Anything,
-					[]string{token},
+					[]string{"test_token"},
 					"test_topic",
 				).Return(&messaging.TopicManagementResponse{}, fmt.Errorf("firebase error"))
 			},
 			queryParams: map[string]string{
 				"project_name": "test_project",
 				"site_name":    "test_site",
-				"user_id":      userID,
+				"user_id":      "test_user",
 				"topic_name":   "test_topic",
 			},
 			expectedStatus: http.StatusInternalServerError,
@@ -550,8 +561,27 @@ func TestSubscribeToTopic(t *testing.T) {
 			mockClient.ExpectedCalls = nil // Clear previous mock expectations
 			tt.setupMock()
 
+			// Setup test environment
+			config = Config{
+				Projects: map[string]ProjectConfig{
+					"test_project": {
+						VapidPublicKey: "test-vapid-key",
+						FirebaseConfig: map[string]interface{}{
+							"apiKey": "test-firebase-key",
+						},
+					},
+				},
+				TrustedProxies: "127.0.0.1",
+			}
+
+			key := fmt.Sprintf("%s_%s", tt.queryParams["project_name"], tt.queryParams["site_name"])
+			userID := tt.queryParams["user_id"]
+			userDeviceMap[key] = map[string][]string{
+				userID: {"test_token"},
+			}
+
 			// Setup request with query parameters
-			req, err := http.NewRequest(http.MethodPost, "/subscribe", http.NoBody)
+			req, err := http.NewRequest(http.MethodPost, "/subscribe", nil)
 			require.NoError(t, err)
 			q := req.URL.Query()
 			for k, v := range tt.queryParams {
@@ -1057,71 +1087,6 @@ func TestApplyTopicDecorations(t *testing.T) {
 			tt.setupDecorations()
 			result := applyTopicDecorations(tt.topic, tt.title)
 			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestPrepareTopicWebPushConfig(t *testing.T) {
-	tests := []struct {
-		name           string
-		topic          string
-		title          string
-		body           string
-		data           string
-		setupData      func()
-		expectError    bool
-		validateConfig func(*testing.T, *messaging.WebpushConfig)
-	}{
-		{
-			name:  "basic config",
-			topic: "test_topic",
-			title: "Test Title",
-			body:  "Test Body",
-			data:  "",
-			validateConfig: func(t *testing.T, config *messaging.WebpushConfig) {
-				assert.Equal(t, "Test Title", config.Notification.Title)
-				assert.Equal(t, "Test Body", config.Notification.Body)
-			},
-		},
-		{
-			name:  "with click action",
-			topic: "test_topic",
-			title: "Test Title",
-			body:  "Test Body",
-			data:  `{"click_action": "https://example.com", "icon": "/path/to/icon.png"}`,
-			validateConfig: func(t *testing.T, config *messaging.WebpushConfig) {
-				assert.Equal(t, "https://example.com", config.FCMOptions.Link)
-				assert.Equal(t, "/path/to/icon.png", config.Data["icon"])
-			},
-		},
-		{
-			name:        "invalid data json",
-			topic:       "test_topic",
-			title:       "Test Title",
-			body:        "Test Body",
-			data:        "invalid json",
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.setupData != nil {
-				tt.setupData()
-			}
-
-			config, err := prepareTopicWebPushConfig(tt.topic, tt.title, tt.body, tt.data)
-
-			if tt.expectError {
-				assert.Error(t, err)
-				return
-			}
-
-			assert.NoError(t, err)
-			assert.NotNil(t, config)
-			if tt.validateConfig != nil {
-				tt.validateConfig(t, config)
-			}
 		})
 	}
 }

@@ -24,23 +24,23 @@ func setupTestEnvironment(t *testing.T) (tmpDir string, cleanup func()) {
 	tmpDir, err := os.MkdirTemp("", "notification-relay-test-*")
 	require.NoError(t, err)
 
-	// Save original paths
-	origConfigPath := configPath
-	origServiceAccountPath := serviceAccountPath
-
-	// Set up test config path
+	// Assign configPath to a test config file
 	configPath = filepath.Join(tmpDir, ConfigJSON)
 
-	// Create minimal test configs
-	testConfig := Config{
-		VapidPublicKey: "test-vapid-key",
-		FirebaseConfig: map[string]interface{}{
-			"apiKey": "test-api-key",
+	// Create Projects in config
+	config = Config{
+		Projects: map[string]ProjectConfig{
+			"test_project": {
+				VapidPublicKey: "test-vapid-key",
+				FirebaseConfig: map[string]interface{}{
+					"apiKey": "test-api-key",
+				},
+			},
 		},
 		TrustedProxies: "127.0.0.1",
 	}
 
-	writeTestJSON(t, configPath, testConfig)
+	writeTestJSON(t, configPath, config)
 	writeTestJSON(t, filepath.Join(tmpDir, CredentialsJSON), make(Credentials))
 	writeTestJSON(t, filepath.Join(tmpDir, UserDeviceMapJSON), make(map[string]map[string][]string))
 	writeTestJSON(t, filepath.Join(tmpDir, DecorationJSON), make(map[string]map[string]Decoration))
@@ -58,8 +58,8 @@ func setupTestEnvironment(t *testing.T) (tmpDir string, cleanup func()) {
 	gin.SetMode(gin.TestMode)
 
 	cleanup = func() {
-		configPath = origConfigPath
-		serviceAccountPath = origServiceAccountPath
+		configPath = ""
+		serviceAccountPath = ""
 		if err := os.RemoveAll(tmpDir); err != nil {
 			t.Errorf("Failed to cleanup test directory: %v", err)
 		}

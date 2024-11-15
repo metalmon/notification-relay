@@ -66,12 +66,10 @@ func getConfig(c *gin.Context) {
 		return
 	}
 
-	// Return project-specific config
+	// Return project-specific config at top level instead of wrapped in "message"
 	c.JSON(http.StatusOK, gin.H{
-		"message": gin.H{
-			"vapid_public_key": projectConfig.VapidPublicKey,
-			"config":           projectConfig.FirebaseConfig,
-		},
+		"vapid_public_key": projectConfig.VapidPublicKey,
+		"config":           projectConfig.FirebaseConfig,
 	})
 }
 
@@ -95,9 +93,11 @@ func getCredential(c *gin.Context) {
 	} else {
 		// Fall back to JSON body if query parameters aren't present
 		if err := c.BindJSON(&req); err != nil {
-			c.JSON(http.StatusOK, CredentialResponse{
-				Success: false,
-				Message: "Invalid request format",
+			c.JSON(http.StatusOK, gin.H{
+				"message": gin.H{
+					"success": false,
+					"message": "Invalid request format",
+				},
 			})
 			return
 		}
@@ -109,9 +109,11 @@ func getCredential(c *gin.Context) {
 
 	// Validate the request
 	if req.Endpoint == "" || req.Token == "" {
-		c.JSON(http.StatusOK, CredentialResponse{
-			Success: false,
-			Message: "Missing required fields",
+		c.JSON(http.StatusOK, gin.H{
+			"message": gin.H{
+				"success": false,
+				"message": "Missing required fields",
+			},
 		})
 		return
 	}
@@ -156,9 +158,11 @@ func getCredential(c *gin.Context) {
 	resp, err := client.Get(webhookURL)
 	if err != nil {
 		log.Printf("Webhook request failed: %v", err)
-		c.JSON(http.StatusOK, CredentialResponse{
-			Success: false,
-			Message: fmt.Sprintf("Failed to verify token: %v", err),
+		c.JSON(http.StatusOK, gin.H{
+			"message": gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Failed to verify token: %v", err),
+			},
 		})
 		return
 	}
@@ -174,9 +178,11 @@ func getCredential(c *gin.Context) {
 	log.Printf("Webhook response status: %d", resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
-		c.JSON(http.StatusOK, CredentialResponse{
-			Success: false,
-			Message: "Token verification failed",
+		c.JSON(http.StatusOK, gin.H{
+			"message": gin.H{
+				"success": false,
+				"message": "Token verification failed",
+			},
 		})
 		return
 	}
@@ -184,9 +190,11 @@ func getCredential(c *gin.Context) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Printf("Error reading webhook response: %v", err)
-		c.JSON(http.StatusOK, CredentialResponse{
-			Success: false,
-			Message: "Invalid token",
+		c.JSON(http.StatusOK, gin.H{
+			"message": gin.H{
+				"success": false,
+				"message": "Invalid token",
+			},
 		})
 		return
 	}
@@ -195,9 +203,11 @@ func getCredential(c *gin.Context) {
 	log.Printf("Expected token: %s", req.Token)
 
 	if string(body) != req.Token {
-		c.JSON(http.StatusOK, CredentialResponse{
-			Success: false,
-			Message: "Invalid token",
+		c.JSON(http.StatusOK, gin.H{
+			"message": gin.H{
+				"success": false,
+				"message": "Invalid token",
+			},
 		})
 		return
 	}
@@ -211,17 +221,15 @@ func getCredential(c *gin.Context) {
 	err = saveJSON(CredentialsJSON, credentials)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"exc": gin.H{
-				"status_code": 500,
-				"message":     fmt.Sprintf("Failed to save credentials: %v", err),
+			"message": gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Failed to save credentials: %v", err),
 			},
 		})
 		return
 	}
 
-	log.Printf("Generated credentials - APIKey: %s", apiKey)
-
-	// Return response in Python server format
+	// Return response in expected format
 	c.JSON(http.StatusOK, gin.H{
 		"message": gin.H{
 			"success": true,
