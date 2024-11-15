@@ -839,7 +839,3 @@ func validateProject(projectName string) error {
 	}
 	return nil
 }
-
-func ptr(i int64) *int64 {
-	return &i
-}
