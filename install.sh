@@ -34,30 +34,97 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Check for required commands
-REQUIRED_COMMANDS="docker"
-if ! docker compose version >/dev/null 2>&1; then
-    if ! command_exists "docker-compose"; then
-        print_message "$RED" "Error: neither 'docker compose' nor 'docker-compose' is available"
-        exit 1
-    fi
-    COMPOSE_CMD="docker-compose"
-else
+# Check for Docker
+if ! command_exists "docker"; then
+    print_message "$RED" "Error: Docker is not installed"
+    exit 1
+fi
+
+# Check for Docker Compose
+COMPOSE_CMD=""
+if docker compose version >/dev/null 2>&1; then
     COMPOSE_CMD="docker compose"
+    print_message "$GREEN" "Using: docker compose"
+elif command_exists "docker-compose"; then
+    COMPOSE_CMD="docker-compose"
+    print_message "$GREEN" "Using: docker-compose"
+else
+    print_message "$RED" "Error: neither 'docker compose' nor 'docker-compose' is available"
+    exit 1
 fi
 
 # Default installation directory
 INSTALL_DIR="/opt/notification-relay"
 CONFIG_DIR="/etc/notification-relay"
 SERVICE_NAME="notification-relay"
+REPO_URL="https://raw.githubusercontent.com/metalmon/notification-relay/main"
 
 # Create directories
 create_directory "$INSTALL_DIR"
 create_directory "$CONFIG_DIR"
 
-# Copy files to installation directory
-print_message "$GREEN" "Copying files to $INSTALL_DIR"
-cp -r ./* "$INSTALL_DIR/"
+# Download only necessary files if installing via curl
+print_message "$GREEN" "Downloading required files to $INSTALL_DIR"
+
+# Download docker-compose files
+curl -sSL "$REPO_URL/docker-compose.yml" -o "$INSTALL_DIR/docker-compose.yml"
+curl -sSL "$REPO_URL/docker-compose.prod.yml" -o "$INSTALL_DIR/docker-compose.prod.yml"
+curl -sSL "$REPO_URL/.env.example" -o "$INSTALL_DIR/.env.example"
+
+# Ask for configuration parameters
+print_message "$GREEN" "Please provide configuration parameters (press Enter for defaults):"
+
+# Function to prompt for input with default value
+prompt_with_default() {
+    local prompt=$1
+    local default=$2
+    local var_name=$3
+    local value=""
+    
+    read -p "$prompt [$default]: " value
+    value=${value:-$default}
+    eval "$var_name='$value'"
+}
+
+# Domain configuration
+prompt_with_default "Push notification domain" "push.example.com" PUSH_DOMAIN
+
+# CORS configuration
+read -p "Do you want to specify allowed origins? (y/n) [n]: " specify_origins
+if [[ "$specify_origins" == "y" ]]; then
+    read -p "Enter comma-separated allowed origins (e.g. https://app1.com,https://app2.com): " ALLOWED_ORIGINS
+else
+    ALLOWED_ORIGINS="*"
+    print_message "$YELLOW" "Using '*' for allowed origins. Not recommended for production!"
+fi
+
+# Create .env file
+cat > "$INSTALL_DIR/.env" << EOF
+# Server Configuration
+LISTEN_PORT=5000
+NOTIFICATION_RELAY_CONFIG=${CONFIG_DIR}/config.json
+GOOGLE_APPLICATION_CREDENTIALS=${CONFIG_DIR}/service-account.json
+
+# Proxy Configuration
+TRUSTED_PROXIES=127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+
+# CORS Configuration
+ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+
+# Traefik Configuration
+PUSH_DOMAIN=${PUSH_DOMAIN}
+CERT_RESOLVER=le
+
+# Docker Configuration
+CONFIG_DIR=${CONFIG_DIR}
+REPLICAS=2
+LOG_MAX_SIZE=10m
+LOG_MAX_FILES=3
+
+# User/Group IDs
+DOCKER_UID=1000
+DOCKER_GID=1000
+EOF
 
 # Create systemd service file
 cat > "/etc/systemd/system/${SERVICE_NAME}.service" << EOF
@@ -69,13 +136,8 @@ Requires=docker.service
 [Service]
 Type=simple
 WorkingDirectory=${INSTALL_DIR}
-Environment=NOTIFICATION_RELAY_CONFIG=${CONFIG_DIR}/config.json
-Environment=GOOGLE_APPLICATION_CREDENTIALS=${CONFIG_DIR}/service-account.json
-# Default CORS and proxy settings (can be overridden in config)
-Environment=TRUSTED_PROXIES=127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
-Environment=ALLOWED_ORIGINS=https://your-app.com,https://app.your-domain.com
-ExecStart=/usr/bin/${COMPOSE_CMD} -f docker-compose.yml -f docker-compose.prod.yml up
-ExecStop=/usr/bin/${COMPOSE_CMD} -f docker-compose.yml -f docker-compose.prod.yml down
+ExecStart=${COMPOSE_CMD} -f docker-compose.yml -f docker-compose.prod.yml up
+ExecStop=${COMPOSE_CMD} -f docker-compose.yml -f docker-compose.prod.yml down
 Restart=always
 User=root
 Group=root
@@ -107,10 +169,7 @@ if [ ! -f "${CONFIG_DIR}/config.json" ]; then
         }
     },
     "trusted_proxies": "127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
-    "allowed_origins": [
-        "https://your-app.com",
-        "https://app.your-domain.com"
-    ]
+    "allowed_origins": []
 }
 EOF
     chmod 640 "${CONFIG_DIR}/config.json"
@@ -150,8 +209,6 @@ print_message "$YELLOW" "Remember to:"
 echo "1. Update ${CONFIG_DIR}/config.json with your configuration"
 echo "2. Copy your service account key to ${CONFIG_DIR}/service-account.json"
 echo "3. Set appropriate permissions on configuration files"
-echo "4. Configure your allowed origins in config.json or environment variables"
-echo "5. Configure your trusted proxies in config.json or environment variables"
 
 # Final permission settings
 chown -R root:root "$INSTALL_DIR"

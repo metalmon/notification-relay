@@ -2,30 +2,51 @@ version: '3.8'
 
 services:
   notification-relay:
-    image: notification-relay:latest
+    image: metalmon/notification-relay:latest
     container_name: notification-relay
     restart: unless-stopped
     environment:
-      - LISTEN_PORT=5000
-      - NOTIFICATION_RELAY_CONFIG=/etc/notification-relay/config.json
-      - GOOGLE_APPLICATION_CREDENTIALS=/etc/notification-relay/service-account.json
+      - LISTEN_PORT=${LISTEN_PORT:-5000}
+      - NOTIFICATION_RELAY_CONFIG=${NOTIFICATION_RELAY_CONFIG:-/etc/notification-relay/config.json}
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-/etc/notification-relay/service-account.json}
       # Trusted proxies configuration
-      - TRUSTED_PROXIES=127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
       # CORS configuration
-      - ALLOWED_ORIGINS=https://your-production-app.com,https://app.your-domain.com
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
     volumes:
-      - ./config:/etc/notification-relay:ro
-    ports:
-      - "5000:5000"
+      - ${CONFIG_DIR:-./config}:/etc/notification-relay:ro
+    labels:
+      traefik.docker.network: traefik-public
+      traefik.enable: "true"
+      
+      # HTTP to HTTPS redirect
+      traefik.http.routers.push-relay-http.entrypoints: http
+      traefik.http.routers.push-relay-http.middlewares: https-redirect
+      traefik.http.routers.push-relay-http.rule: Host(`${PUSH_DOMAIN:-push.example.com}`)
+      traefik.http.routers.push-relay-http.service: push-relay
+      
+      # HTTPS router
+      traefik.http.routers.push-relay-https.entrypoints: https
+      traefik.http.routers.push-relay-https.rule: Host(`${PUSH_DOMAIN:-push.example.com}`)
+      traefik.http.routers.push-relay-https.service: push-relay
+      traefik.http.routers.push-relay-https.tls: "true"
+      traefik.http.routers.push-relay-https.tls.certresolver: ${CERT_RESOLVER:-le}
+      
+      # Service definition
+      traefik.http.services.push-relay.loadbalancer.server.port: "${LISTEN_PORT:-5000}"
+      traefik.http.services.push-relay.loadbalancer.passHostHeader: "true"
     networks:
-      - proxy-network
+      - traefik-public
+      - bench-network
 
 networks:
-  proxy-network:
+  traefik-public:
+    external: true
+  bench-network:
     external: true
 
 deploy:
-  replicas: 2
+  replicas: ${REPLICAS:-2}
   update_config:
     parallelism: 1
     delay: 10s
@@ -38,5 +59,5 @@ deploy:
 logging:
   driver: "json-file"
   options:
-    max-size: "10m"
-    max-file: "3" 
+    max-size: "${LOG_MAX_SIZE:-10m}"
+    max-file: "${LOG_MAX_FILES:-3}" 
