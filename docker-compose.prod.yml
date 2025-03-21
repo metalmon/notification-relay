@@ -37,7 +37,6 @@ services:
       traefik.http.services.push-relay.loadbalancer.passHostHeader: "true"
     networks:
       - traefik-public
-      - bench-network
     deploy:
       replicas: ${REPLICAS:-2}
       update_config:
@@ -56,6 +55,4 @@ services:
 
 networks:
   traefik-public:
-    external: true
-  bench-network:
     external: true 
