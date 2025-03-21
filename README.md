@@ -84,6 +84,59 @@ This method:
 4. Use strong API credentials
 5. Set appropriate file permissions
 
+## Uninstallation
+
+To uninstall the Notification Relay Service:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/metalmon/notification-relay/main/uninstall.sh | sudo bash
+```
+
+### Uninstallation Options
+
+The uninstall script supports several options:
+
+- `--keep-config` - Preserves configuration files by creating a backup before removal
+- `--force` - Uninstalls without asking for confirmation
+- `--no-remove-containers` - Leaves Docker containers intact (useful if they're managed separately)
+
+Examples:
+
+```bash
+# Standard uninstall with confirmation
+sudo ./uninstall.sh
+
+# Uninstall but keep configuration files backed up
+sudo ./uninstall.sh --keep-config
+
+# Force uninstall without confirmation
+sudo ./uninstall.sh --force
+```
+
+### Manual Cleanup
+
+If you need to manually clean up:
+
+1. Stop and disable the service:
+   ```bash
+   sudo systemctl stop notification-relay
+   sudo systemctl disable notification-relay
+   ```
+
+2. Remove Docker containers (if using Docker):
+   ```bash
+   cd /opt/notification-relay
+   sudo docker compose down -v
+   ```
+
+3. Remove installation files:
+   ```bash
+   sudo rm -rf /opt/notification-relay
+   sudo rm -rf /etc/notification-relay
+   sudo rm /etc/systemd/system/notification-relay.service
+   sudo systemctl daemon-reload
+   ```
+
 ## License
 
 [MIT License](LICENSE)
