@@ -35,13 +35,16 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Check for required commands
-REQUIRED_COMMANDS="docker docker-compose"
-for cmd in $REQUIRED_COMMANDS; do
-    if ! command_exists "$cmd"; then
-        print_message "$RED" "Error: $cmd is not installed"
+REQUIRED_COMMANDS="docker"
+if ! docker compose version >/dev/null 2>&1; then
+    if ! command_exists "docker-compose"; then
+        print_message "$RED" "Error: neither 'docker compose' nor 'docker-compose' is available"
         exit 1
     fi
-done
+    COMPOSE_CMD="docker-compose"
+else
+    COMPOSE_CMD="docker compose"
+fi
 
 # Default installation directory
 INSTALL_DIR="/opt/notification-relay"
@@ -71,8 +74,8 @@ Environment=GOOGLE_APPLICATION_CREDENTIALS=${CONFIG_DIR}/service-account.json
 # Default CORS and proxy settings (can be overridden in config)
 Environment=TRUSTED_PROXIES=127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 Environment=ALLOWED_ORIGINS=https://your-app.com,https://app.your-domain.com
-ExecStart=/usr/bin/docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
-ExecStop=/usr/bin/docker-compose -f docker-compose.yml -f docker-compose.prod.yml down
+ExecStart=/usr/bin/${COMPOSE_CMD} -f docker-compose.yml -f docker-compose.prod.yml up
+ExecStop=/usr/bin/${COMPOSE_CMD} -f docker-compose.yml -f docker-compose.prod.yml down
 Restart=always
 User=root
 Group=root
