@@ -118,8 +118,8 @@ Requires=docker.service
 [Service]
 Type=simple
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${COMPOSE_CMD} -f docker-compose.yml -f docker-compose.prod.yml up
-ExecStop=${COMPOSE_CMD} -f docker-compose.yml -f docker-compose.prod.yml down
+ExecStart=${COMPOSE_CMD} --env-file ${INSTALL_DIR}/.env -f docker-compose.yml -f docker-compose.prod.yml up
+ExecStop=${COMPOSE_CMD} --env-file ${INSTALL_DIR}/.env -f docker-compose.yml -f docker-compose.prod.yml down
 Restart=always
 User=root
 Group=root
