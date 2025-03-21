@@ -71,35 +71,14 @@ curl -sSL "$REPO_URL/docker-compose.yml" -o "$INSTALL_DIR/docker-compose.yml"
 curl -sSL "$REPO_URL/docker-compose.prod.yml" -o "$INSTALL_DIR/docker-compose.prod.yml"
 curl -sSL "$REPO_URL/.env.example" -o "$INSTALL_DIR/.env.example"
 
-# Ask for configuration parameters
-print_message "$GREEN" "Please provide configuration parameters (press Enter for defaults):"
+# Use default values - non-interactive for stability
+print_message "$GREEN" "Using default configuration values. You can modify them later in $INSTALL_DIR/.env"
 
-# Function to prompt for input with default value
-prompt_with_default() {
-    local prompt=$1
-    local default=$2
-    local var_name=$3
-    local value=""
-    
-    read -p "$prompt [$default]: " value
-    value=${value:-$default}
-    eval "$var_name='$value'"
-}
-
-# Domain configuration
-prompt_with_default "Push notification domain" "push.example.com" PUSH_DOMAIN
-
-# CORS configuration - simplify to avoid syntax issues
+# Set default values
+PUSH_DOMAIN="push.example.com"
 ALLOWED_ORIGINS="*"
-read -p "Do you want to specify allowed origins instead of using wildcard '*'? (y/n) [n]: " specify_origins
-if [ "$specify_origins" = "y" ]; then
-    read -p "Enter comma-separated allowed origins (e.g. https://app1.com,https://app2.com): " input_origins
-    if [ -n "$input_origins" ]; then
-        ALLOWED_ORIGINS="$input_origins"
-    fi
-else
-    print_message "$YELLOW" "Using '*' for allowed origins. Not recommended for production!"
-fi
+print_message "$YELLOW" "Using default domain: $PUSH_DOMAIN"
+print_message "$YELLOW" "Using '*' for allowed origins. Not recommended for production!"
 
 # Create .env file
 cat > "$INSTALL_DIR/.env" << EOF
@@ -198,6 +177,7 @@ EOF
 if [ ! -f "${CONFIG_DIR}/service-account.json" ]; then
     print_message "$YELLOW" "Warning: service-account.json not found in ${CONFIG_DIR}"
     print_message "$YELLOW" "Please copy your Firebase service account key to ${CONFIG_DIR}/service-account.json"
+    print_message "$YELLOW" "After copying, set proper permissions with: chmod 640 ${CONFIG_DIR}/service-account.json"
 fi
 
 # Reload systemd
@@ -211,7 +191,7 @@ echo "systemctl enable $SERVICE_NAME"
 print_message "$YELLOW" "Remember to:"
 echo "1. Update ${CONFIG_DIR}/config.json with your configuration"
 echo "2. Copy your service account key to ${CONFIG_DIR}/service-account.json"
-echo "3. Set appropriate permissions on configuration files"
+echo "3. Update ${INSTALL_DIR}/.env with your domain settings"
 
 # Final permission settings
 chown -R root:root "$INSTALL_DIR"
