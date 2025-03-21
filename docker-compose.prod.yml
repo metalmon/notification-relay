@@ -38,23 +38,22 @@ services:
     networks:
       - traefik-public
       - bench-network
+    deploy:
+      replicas: ${REPLICAS:-2}
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+        window: 120s
 
 networks:
   traefik-public:
     external: true
   bench-network:
     external: true
-
-deploy:
-  replicas: ${REPLICAS:-2}
-  update_config:
-    parallelism: 1
-    delay: 10s
-  restart_policy:
-    condition: any
-    delay: 5s
-    max_attempts: 3
-    window: 120s
 
 logging:
   driver: "json-file"
