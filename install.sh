@@ -89,12 +89,15 @@ prompt_with_default() {
 # Domain configuration
 prompt_with_default "Push notification domain" "push.example.com" PUSH_DOMAIN
 
-# CORS configuration
-read -p "Do you want to specify allowed origins? (y/n) [n]: " specify_origins
-if [[ "$specify_origins" == "y" ]]; then
-    read -p "Enter comma-separated allowed origins (e.g. https://app1.com,https://app2.com): " ALLOWED_ORIGINS
+# CORS configuration - simplify to avoid syntax issues
+ALLOWED_ORIGINS="*"
+read -p "Do you want to specify allowed origins instead of using wildcard '*'? (y/n) [n]: " specify_origins
+if [ "$specify_origins" = "y" ]; then
+    read -p "Enter comma-separated allowed origins (e.g. https://app1.com,https://app2.com): " input_origins
+    if [ -n "$input_origins" ]; then
+        ALLOWED_ORIGINS="$input_origins"
+    fi
 else
-    ALLOWED_ORIGINS="*"
     print_message "$YELLOW" "Using '*' for allowed origins. Not recommended for production!"
 fi
 
