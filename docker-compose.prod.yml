@@ -4,6 +4,7 @@ services:
   notification-relay:
     image: metalmon/notification-relay:latest
     restart: unless-stopped
+    ports: []
     environment:
       - LISTEN_PORT=${LISTEN_PORT:-5000}
       - NOTIFICATION_RELAY_CONFIG=${NOTIFICATION_RELAY_CONFIG:-/etc/notification-relay/config.json}
