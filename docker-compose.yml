@@ -3,8 +3,8 @@ version: '3.8'
 services:
   notification-relay:
     build: .
-    ports:
-      - "${LISTEN_PORT:-5000}:5000"
+    expose:
+      - "5000"
     volumes:
       - /etc/notification-relay:/etc/notification-relay
     environment:

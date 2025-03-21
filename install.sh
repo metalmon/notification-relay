@@ -71,6 +71,11 @@ curl -sSL "$REPO_URL/docker-compose.yml" -o "$INSTALL_DIR/docker-compose.yml"
 curl -sSL "$REPO_URL/docker-compose.prod.yml" -o "$INSTALL_DIR/docker-compose.prod.yml"
 curl -sSL "$REPO_URL/.env.example" -o "$INSTALL_DIR/.env.example"
 
+# Modify docker-compose.yml to use expose instead of ports
+# This ensures compatibility with scaling
+sed -i 's/ports:/expose:/g' "$INSTALL_DIR/docker-compose.yml"
+sed -i 's/- "\${LISTEN_PORT:-5000}:5000"/- "5000"/g' "$INSTALL_DIR/docker-compose.yml"
+
 # Use default values - non-interactive for stability
 print_message "$GREEN" "Using default configuration values. You can modify them later in $INSTALL_DIR/.env"
 
@@ -99,7 +104,7 @@ CERT_RESOLVER=le
 
 # Docker Configuration
 CONFIG_DIR=${CONFIG_DIR}
-REPLICAS=2
+REPLICAS=1
 LOG_MAX_SIZE=10m
 LOG_MAX_FILES=3
 

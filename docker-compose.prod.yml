@@ -4,7 +4,8 @@ services:
   notification-relay:
     image: metalmon/notification-relay:latest
     restart: unless-stopped
-    ports: []
+    expose:
+      - "5000"
     environment:
       - LISTEN_PORT=${LISTEN_PORT:-5000}
       - NOTIFICATION_RELAY_CONFIG=${NOTIFICATION_RELAY_CONFIG:-/etc/notification-relay/config.json}
@@ -13,8 +14,6 @@ services:
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
       # CORS configuration
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
-    expose:
-      - "${LISTEN_PORT:-5000}"
     volumes:
       - ${CONFIG_DIR:-./config}:/etc/notification-relay
     labels:
@@ -43,7 +42,7 @@ services:
     networks:
       - traefik-public
     deploy:
-      replicas: ${REPLICAS:-2}
+      replicas: 1
       update_config:
         parallelism: 1
         delay: 10s
