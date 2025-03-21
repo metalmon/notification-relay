@@ -48,15 +48,14 @@ services:
         delay: 5s
         max_attempts: 3
         window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "${LOG_MAX_SIZE:-10m}"
+        max-file: "${LOG_MAX_FILES:-3}"
 
 networks:
   traefik-public:
     external: true
   bench-network:
-    external: true
-
-logging:
-  driver: "json-file"
-  options:
-    max-size: "${LOG_MAX_SIZE:-10m}"
-    max-file: "${LOG_MAX_FILES:-3}" 
+    external: true 
