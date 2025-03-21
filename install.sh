@@ -24,7 +24,7 @@ create_directory() {
     if [ ! -d "$dir" ]; then
         print_message "$YELLOW" "Creating directory: $dir"
         mkdir -p "$dir"
-        chmod 750 "$dir"
+        chmod 755 "$dir"
     fi
 }
 
@@ -154,7 +154,7 @@ if [ ! -f "${CONFIG_DIR}/config.json" ]; then
     "allowed_origins": []
 }
 EOF
-    chmod 640 "${CONFIG_DIR}/config.json"
+    chmod 644 "${CONFIG_DIR}/config.json"
     print_message "$YELLOW" "Please update ${CONFIG_DIR}/config.json with your configuration"
 fi
 
@@ -177,7 +177,7 @@ EOF
 if [ ! -f "${CONFIG_DIR}/service-account.json" ]; then
     print_message "$YELLOW" "Warning: service-account.json not found in ${CONFIG_DIR}"
     print_message "$YELLOW" "Please copy your Firebase service account key to ${CONFIG_DIR}/service-account.json"
-    print_message "$YELLOW" "After copying, set proper permissions with: chmod 640 ${CONFIG_DIR}/service-account.json"
+    print_message "$YELLOW" "After copying, set proper permissions with: chmod 644 ${CONFIG_DIR}/service-account.json"
 fi
 
 # Reload systemd
@@ -196,9 +196,9 @@ echo "3. Update ${INSTALL_DIR}/.env with your domain settings"
 # Final permission settings
 chown -R root:root "$INSTALL_DIR"
 chown -R root:root "$CONFIG_DIR"
-chmod 750 "$CONFIG_DIR"
+chmod 755 "$CONFIG_DIR"
 if [ -f "${CONFIG_DIR}/service-account.json" ]; then
-    chmod 640 "${CONFIG_DIR}/service-account.json"
+    chmod 644 "${CONFIG_DIR}/service-account.json"
 fi
 
 exit 0 

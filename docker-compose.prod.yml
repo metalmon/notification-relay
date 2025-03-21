@@ -13,7 +13,7 @@ services:
       # CORS configuration
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
     volumes:
-      - ${CONFIG_DIR:-./config}:/etc/notification-relay:ro
+      - ${CONFIG_DIR:-./config}:/etc/notification-relay
     labels:
       traefik.docker.network: traefik-public
       traefik.enable: "true"
