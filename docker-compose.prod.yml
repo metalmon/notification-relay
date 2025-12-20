@@ -21,13 +21,13 @@ services:
       traefik.enable: "true"
       
       # HTTP to HTTPS redirect
-      traefik.http.routers.push-relay-http.entrypoints: http
+      traefik.http.routers.push-relay-http.entrypoints: ${TRAEFIK_HTTP_ENTRYPOINT:-web}
       traefik.http.routers.push-relay-http.middlewares: https-redirect
       traefik.http.routers.push-relay-http.rule: Host(`${PUSH_DOMAIN:-push.example.com}`)
       traefik.http.routers.push-relay-http.service: push-relay
       
       # HTTPS router
-      traefik.http.routers.push-relay-https.entrypoints: https
+      traefik.http.routers.push-relay-https.entrypoints: ${TRAEFIK_HTTPS_ENTRYPOINT:-websecure}
       traefik.http.routers.push-relay-https.rule: Host(`${PUSH_DOMAIN:-push.example.com}`)
       traefik.http.routers.push-relay-https.service: push-relay
       traefik.http.routers.push-relay-https.tls: "true"
