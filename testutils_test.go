@@ -32,8 +32,8 @@ func setupTestEnvironment(t *testing.T) (tmpDir string, cleanup func()) {
 		Projects: map[string]ProjectConfig{
 			"test_project": {
 				VapidPublicKey: "test-vapid-key",
-				FirebaseConfig: map[string]interface{}{
-					"apiKey": "test-api-key",
+				FirebaseConfig: FirebaseConfig{
+					ApiKey: "test-api-key",
 				},
 			},
 		},

@@ -36,8 +36,8 @@ func TestGetConfig(t *testing.T) {
 					Projects: map[string]ProjectConfig{
 						"test_project": {
 							VapidPublicKey: "test-vapid-key",
-							FirebaseConfig: map[string]interface{}{
-								"apiKey": "test-firebase-key",
+							FirebaseConfig: FirebaseConfig{
+								ApiKey: "test-firebase-key",
 							},
 						},
 					},
@@ -61,8 +61,8 @@ func TestGetConfig(t *testing.T) {
 					Projects: map[string]ProjectConfig{
 						"test_project": {
 							VapidPublicKey: "",
-							FirebaseConfig: map[string]interface{}{
-								"apiKey": "test-firebase-key",
+							FirebaseConfig: FirebaseConfig{
+								ApiKey: "test-firebase-key",
 							},
 						},
 					},
@@ -566,8 +566,8 @@ func TestSubscribeToTopic(t *testing.T) {
 				Projects: map[string]ProjectConfig{
 					"test_project": {
 						VapidPublicKey: "test-vapid-key",
-						FirebaseConfig: map[string]interface{}{
-							"apiKey": "test-firebase-key",
+						FirebaseConfig: FirebaseConfig{
+							ApiKey: "test-firebase-key",
 						},
 					},
 				},
