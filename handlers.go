@@ -466,26 +466,27 @@ func removeToken(c *gin.Context) {
 
 	if tokens, exists := userDeviceMap[key][userID]; exists {
 		for i, token := range tokens {
-			if token == fcmToken {
-				userDeviceMap[key][userID] = append(tokens[:i], tokens[i+1:]...)
-				err := saveJSON(UserDeviceMapJSON, userDeviceMap)
-				if err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{
-						"exc": gin.H{
-							"status_code": 500,
-							"message":     "Failed to save user device map",
-						},
-					})
-					return
-				}
-				c.JSON(http.StatusOK, gin.H{
-					"message": gin.H{
-						"success": 200,
-						"message": "User Token removed",
+			if token != fcmToken {
+				continue
+			}
+			userDeviceMap[key][userID] = append(tokens[:i], tokens[i+1:]...)
+			err := saveJSON(UserDeviceMapJSON, userDeviceMap)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"exc": gin.H{
+						"status_code": 500,
+						"message":     "Failed to save user device map",
 					},
 				})
 				return
 			}
+			c.JSON(http.StatusOK, gin.H{
+				"message": gin.H{
+					"success": 200,
+					"message": "User Token removed",
+				},
+			})
+			return
 		}
 	}
 
@@ -574,9 +575,9 @@ func applyTopicDecorations(topic, title string) string {
 // prepareWebPushConfig creates a web push notification configuration.
 // Applies decorations to the title, adds icon, and processes additional data.
 // If topic is provided, applies topic-specific decorations instead of project decorations.
-func prepareWebPushConfig(key, title, body, data string, topic string) (*messaging.WebpushConfig, error) {
+func prepareWebPushConfig(key, title, body, data, topic string) (*messaging.WebpushConfig, error) {
 	// Apply decorations based on whether it's a topic notification or not
-	decoratedTitle := title
+	var decoratedTitle string
 	if topic != "" {
 		decoratedTitle = applyTopicDecorations(topic, title)
 	} else {

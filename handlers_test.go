@@ -87,7 +87,7 @@ func TestGetConfig(t *testing.T) {
 			tt.setupConfig()
 
 			// Setup request with project_name query parameter
-			c.Request, _ = http.NewRequest("GET", "/api/method/notification_relay.api.get_config?project_name=test_project", nil)
+			c.Request, _ = http.NewRequest("GET", "/api/method/notification_relay.api.get_config?project_name=test_project", http.NoBody)
 
 			getConfig(c)
 
@@ -581,7 +581,7 @@ func TestSubscribeToTopic(t *testing.T) {
 			}
 
 			// Setup request with query parameters
-			req, err := http.NewRequest(http.MethodPost, "/subscribe", nil)
+			req, err := http.NewRequest(http.MethodPost, "/subscribe", http.NoBody)
 			require.NoError(t, err)
 			q := req.URL.Query()
 			for k, v := range tt.queryParams {

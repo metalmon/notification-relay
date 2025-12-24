@@ -67,7 +67,7 @@ var initFirebase = func() error {
 }
 
 func init() {
-	//gin.SetMode(gin.ReleaseMode)
+	// gin.SetMode(gin.ReleaseMode)
 	// Check for service account path in environment
 	serviceAccountPath = os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
 	if serviceAccountPath == "" {
@@ -187,6 +187,68 @@ func getAllowedOrigins() []string {
 	return []string{}
 }
 
+func corsMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		origin := c.Request.Header.Get("Origin")
+		allowedOrigins := getAllowedOrigins()
+
+		log.Printf("[CORS] Request from origin: %s", origin)
+		log.Printf("[CORS] Allowed origins: %v", allowedOrigins)
+		log.Printf("[CORS] Request method: %s", c.Request.Method)
+		log.Printf("[CORS] Request path: %s", c.Request.URL.Path)
+
+		if !handleCORSOrigin(c, origin, allowedOrigins) {
+			return
+		}
+
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
+		c.Writer.Header().Set("Access-Control-Max-Age", "86400")
+
+		// Log response headers
+		log.Printf("[CORS] Response headers: %+v", c.Writer.Header())
+
+		if c.Request.Method == "OPTIONS" {
+			log.Printf("[CORS] Handling OPTIONS preflight request")
+			c.AbortWithStatus(http.StatusOK)
+			return
+		}
+
+		c.Next()
+	}
+}
+
+func handleCORSOrigin(c *gin.Context, origin string, allowedOrigins []string) bool {
+	if origin == "" {
+		log.Printf("[CORS] No origin header, using wildcard")
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		return true
+	}
+
+	// Special case: allow all origins
+	if len(allowedOrigins) == 1 && allowedOrigins[0] == "*" {
+		log.Printf("[CORS] Wildcard origin configured, allowing: %s", origin)
+		c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		return true
+	}
+
+	// Check if origin is in allowed list
+	for _, allowed := range allowedOrigins {
+		if allowed == origin {
+			log.Printf("[CORS] Origin %s matched allowed origin %s", origin, allowed)
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+			return true
+		}
+	}
+
+	log.Printf("[CORS] Rejected request from unauthorized origin: %s. Allowed origins: %v",
+		origin, allowedOrigins)
+	c.AbortWithStatus(http.StatusForbidden)
+	return false
+}
+
 func main() {
 	// Load configuration
 	if err := loadJSON(ConfigJSON, &config); err != nil {
@@ -208,64 +270,7 @@ func main() {
 	router := gin.Default()
 
 	// Add CORS middleware with logging and origin validation
-	router.Use(func(c *gin.Context) {
-		origin := c.Request.Header.Get("Origin")
-		allowedOrigins := getAllowedOrigins()
-
-		log.Printf("[CORS] Request from origin: %s", origin)
-		log.Printf("[CORS] Allowed origins: %v", allowedOrigins)
-		log.Printf("[CORS] Request method: %s", c.Request.Method)
-		log.Printf("[CORS] Request path: %s", c.Request.URL.Path)
-
-		// Check if origin is allowed
-		originAllowed := false
-		if origin != "" {
-			// Special case: allow all origins
-			if len(allowedOrigins) == 1 && allowedOrigins[0] == "*" {
-				log.Printf("[CORS] Wildcard origin configured, allowing: %s", origin)
-				originAllowed = true
-				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-			} else {
-				for _, allowed := range allowedOrigins {
-					if allowed == origin {
-						log.Printf("[CORS] Origin %s matched allowed origin %s", origin, allowed)
-						originAllowed = true
-						break
-					}
-				}
-				if originAllowed {
-					c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-				}
-			}
-
-			if !originAllowed {
-				log.Printf("[CORS] Rejected request from unauthorized origin: %s. Allowed origins: %v",
-					origin, allowedOrigins)
-				c.AbortWithStatus(http.StatusForbidden)
-				return
-			}
-
-			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		} else {
-			log.Printf("[CORS] No origin header, using wildcard")
-			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		}
-
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization")
-		c.Writer.Header().Set("Access-Control-Max-Age", "86400")
-
-		// Log response headers
-		log.Printf("[CORS] Response headers: %+v", c.Writer.Header())
-
-		if c.Request.Method == "OPTIONS" {
-			log.Printf("[CORS] Handling OPTIONS preflight request")
-			c.AbortWithStatus(http.StatusOK)
-			return
-		}
-
-		c.Next()
-	})
+	router.Use(corsMiddleware())
 
 	// Configure trusted proxies
 	trustedProxies := os.Getenv("TRUSTED_PROXIES")
@@ -283,7 +288,7 @@ func main() {
 	// Add this before setting up routes
 	router.Use(func(c *gin.Context) {
 		// Normalize double slashes in URL path
-		path := strings.Replace(c.Request.URL.Path, "//", "/", -1)
+		path := strings.ReplaceAll(c.Request.URL.Path, "//", "/")
 		if path != c.Request.URL.Path {
 			c.Request.URL.Path = path
 		}
@@ -293,8 +298,6 @@ func main() {
 	// API routes - make sure the path starts with a single slash
 	router.GET("/api/method/notification_relay.api.get_config", getConfig)
 	router.POST("/api/method/notification_relay.api.auth.get_credential", getCredential)
-	//log.Printf("Registered route: /api/method/notification_relay.api.get_config")
-	//log.Printf("Registered route: /api/method/notification_relay.api.auth.get_credential")
 
 	// Protected routes
 	auth := router.Group("/", apiBasicAuth())
