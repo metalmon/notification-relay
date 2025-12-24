@@ -627,6 +627,11 @@ func prepareWebPushConfig(key, title, body, data, topic string) (*messaging.Webp
 		}
 
 		if clickAction, ok := dataMap["click_action"].(string); ok {
+			// Convert HTTP to HTTPS for web push (Firebase requires HTTPS)
+			if strings.HasPrefix(clickAction, "http://") {
+				clickAction = strings.Replace(clickAction, "http://", "https://", 1)
+				log.Printf("[prepareWebPushConfig] Converted HTTP to HTTPS for click_action: %s", clickAction)
+			}
 			webpushConfig.FCMOptions = &messaging.WebpushFCMOptions{
 				Link: clickAction,
 			}

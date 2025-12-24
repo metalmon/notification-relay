@@ -1,0 +1,10 @@
+testdata/
+bin/
+*.md
+.git/
+.github/
+docker-compose*.yml
+Dockerfile.dev
+*.test
+*.log
+
