@@ -459,7 +459,7 @@ func TestPrepareWebPushConfig(t *testing.T) {
 				tt.setupData()
 			}
 
-			config, err := prepareWebPushConfig(tt.key, tt.title, tt.body, tt.data, "")
+			config, _, err := prepareWebPushConfig(tt.key, tt.title, tt.body, tt.data, "")
 
 			if tt.expectError {
 				assert.Error(t, err)

@@ -509,6 +509,53 @@ func removeToken(c *gin.Context) {
 	})
 }
 
+// removeInvalidToken removes an invalid token from the user's device map
+func removeInvalidToken(key, userID, invalidToken string) {
+	if userDeviceMap[key] == nil {
+		return
+	}
+	
+	tokens, exists := userDeviceMap[key][userID]
+	if !exists {
+		return
+	}
+	
+	// Remove the invalid token
+	newTokens := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		if token != invalidToken {
+			newTokens = append(newTokens, token)
+		}
+	}
+	
+	// Update the map
+	if len(newTokens) == 0 {
+		delete(userDeviceMap[key], userID)
+	} else {
+		userDeviceMap[key][userID] = newTokens
+	}
+	
+	// Save updated map
+	if err := saveJSON(UserDeviceMapJSON, userDeviceMap); err != nil {
+		log.Printf("[removeInvalidToken] Failed to save user device map after removing invalid token: %v", err)
+	} else {
+		log.Printf("[removeInvalidToken] Removed invalid token for user %s (key: %s)", userID, key)
+	}
+}
+
+// isInvalidTokenError checks if the error indicates an invalid token
+func isInvalidTokenError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	// Check for common Firebase errors indicating invalid token
+	return strings.Contains(errStr, "Requested entity was not found") ||
+		strings.Contains(errStr, "invalid registration token") ||
+		strings.Contains(errStr, "registration-token-not-registered") ||
+		strings.Contains(errStr, "InvalidRegistration")
+}
+
 // getUserTokens retrieves the user's tokens
 func getUserTokens(key, userID string) ([]string, error) {
 	// Key format is "projectName_siteName"
@@ -604,7 +651,8 @@ func applyTopicDecorations(topic, title string) string {
 // prepareWebPushConfig creates a web push notification configuration.
 // Applies decorations to the title, adds icon, and processes additional data.
 // If topic is provided, applies topic-specific decorations instead of project decorations.
-func prepareWebPushConfig(key, title, body, data, topic string) (*messaging.WebpushConfig, error) {
+// Returns the webpush config and the converted data map (with HTTPS URLs).
+func prepareWebPushConfig(key, title, body, data, topic string) (*messaging.WebpushConfig, map[string]interface{}, error) {
 	// Apply decorations based on whether it's a topic notification or not
 	var decoratedTitle string
 	if topic != "" {
@@ -620,16 +668,17 @@ func prepareWebPushConfig(key, title, body, data, topic string) (*messaging.Webp
 		},
 	}
 
+	var dataMap map[string]interface{}
 	if data != "" {
-		var dataMap map[string]interface{}
 		if err := json.Unmarshal([]byte(data), &dataMap); err != nil {
-			return nil, fmt.Errorf("invalid data format: %v", err)
+			return nil, nil, fmt.Errorf("invalid data format: %v", err)
 		}
 
 		if clickAction, ok := dataMap["click_action"].(string); ok {
 			// Convert HTTP to HTTPS for web push (Firebase requires HTTPS)
 			if strings.HasPrefix(clickAction, "http://") {
 				clickAction = strings.Replace(clickAction, "http://", "https://", 1)
+				dataMap["click_action"] = clickAction // Update in data map too
 				log.Printf("[prepareWebPushConfig] Converted HTTP to HTTPS for click_action: %s", clickAction)
 			}
 			webpushConfig.FCMOptions = &messaging.WebpushFCMOptions{
@@ -653,7 +702,7 @@ func prepareWebPushConfig(key, title, body, data, topic string) (*messaging.Webp
 		addIconToConfig(key, webpushConfig)
 	}
 
-	return webpushConfig, nil
+	return webpushConfig, dataMap, nil
 }
 
 // Add logging helpers
@@ -681,8 +730,9 @@ func parseNotificationData(data string) (map[string]interface{}, error) {
 
 // Update send functions to use helper
 func sendNotificationToUser(c *gin.Context) {
-	log.Printf("[sendNotificationToUser] Request received - Headers: %+v", c.Request.Header)
-	log.Printf("[sendNotificationToUser] Query params: %+v", c.Request.URL.Query())
+	requestID := fmt.Sprintf("%d", time.Now().UnixNano())
+	log.Printf("[sendNotificationToUser][%s] Request received - Headers: %+v", requestID, c.Request.Header)
+	log.Printf("[sendNotificationToUser][%s] Query params: %+v", requestID, c.Request.URL.Query())
 
 	projectName := c.Query("project_name")
 	siteName := c.Query("site_name")
@@ -691,6 +741,8 @@ func sendNotificationToUser(c *gin.Context) {
 	title := c.Query("title")
 	body := c.Query("body")
 	data := c.Query("data")
+	
+	log.Printf("[sendNotificationToUser][%s] Processing notification for user: %s, project: %s, site: %s", requestID, userID, projectName, siteName)
 
 	// Get user's tokens
 	tokens, err := getUserTokens(key, userID)
@@ -715,16 +767,28 @@ func sendNotificationToUser(c *gin.Context) {
 	notificationData := convertToStringMap(dataMap)
 
 	// Add deduplication key
-	deduplicationID := fmt.Sprintf("raven_%s_%d",
-		notificationData["message_id"],
-		time.Now().UnixMilli())
+	// Use message_id only (without timestamp) to ensure same message_id gets same deduplicationID
+	// even if function is called multiple times
+	messageID := notificationData["message_id"]
+	if messageID == "" {
+		messageID = fmt.Sprintf("msg_%d", time.Now().Unix())
+	}
+	deduplicationID := fmt.Sprintf("raven_%s", messageID)
 	notificationData["deduplication_id"] = deduplicationID
+	log.Printf("[sendNotificationToUser][%s] Generated deduplicationID: %s (message_id: %s)", requestID, deduplicationID, messageID)
 
 	// Prepare web push config with decorations and icons (no topic for user notifications)
-	webpushConfig, err := prepareWebPushConfig(key, title, body, data, "")
+	webpushConfig, convertedDataMap, err := prepareWebPushConfig(key, title, body, data, "")
 	if err != nil {
 		sendErrorResponse(c, http.StatusBadRequest, fmt.Sprintf("Failed to prepare notification: %v", err))
 		return
+	}
+	
+	// Update notificationData with converted click_action if it was converted
+	if convertedDataMap != nil {
+		if convertedClickAction, ok := convertedDataMap["click_action"].(string); ok {
+			notificationData["click_action"] = convertedClickAction
+		}
 	}
 
 	// Add deduplication tag and other notification settings
@@ -747,7 +811,8 @@ func sendNotificationToUser(c *gin.Context) {
 	defer cancel()
 
 	validTokens := make([]string, 0, len(tokens))
-	for _, token := range tokens {
+	log.Printf("[sendNotificationToUser][%s] Sending to %d token(s) for user %s", requestID, len(tokens), userID)
+	for i, token := range tokens {
 		// Create message with notification and data
 		message := &messaging.Message{
 			Token: token,
@@ -758,18 +823,29 @@ func sendNotificationToUser(c *gin.Context) {
 			Webpush: webpushConfig,
 		}
 
-		log.Printf("[sendNotificationToUser] Sending notification with data: %+v", notificationData)
-		log.Printf("[sendNotificationToUser] Full message: %+v", message)
+		tokenPreview := token
+		if len(token) > 20 {
+			tokenPreview = token[:20] + "..."
+		}
+		log.Printf("[sendNotificationToUser][%s] Sending notification %d/%d to token %s (deduplicationID: %s)", 
+			requestID, i+1, len(tokens), tokenPreview, deduplicationID)
 
 		response, err := messagingClient.Send(ctx, message)
 		if err != nil {
-			log.Printf("Failed to send notification to token %s: %v", token, err)
+			log.Printf("[sendNotificationToUser][%s] Failed to send notification to token %s: %v", requestID, token, err)
+			
+			// If token is invalid, remove it from user's device map
+			if isInvalidTokenError(err) {
+				log.Printf("[sendNotificationToUser][%s] Token is invalid, removing from user device map", requestID)
+				removeInvalidToken(key, userID, token)
+			}
 			continue
 		}
 
-		log.Printf("[sendNotificationToUser] Successfully sent notification: %s", response)
+		log.Printf("[sendNotificationToUser][%s] Successfully sent notification %d/%d: %s", requestID, i+1, len(tokens), response)
 		validTokens = append(validTokens, token)
 	}
+	log.Printf("[sendNotificationToUser][%s] Completed: %d/%d notifications sent successfully", requestID, len(validTokens), len(tokens))
 
 	// Return response based on success
 	if len(validTokens) > 0 {
@@ -824,7 +900,7 @@ func sendNotificationToTopic(c *gin.Context) {
 	}
 
 	// Prepare web push config (pass topic for topic-specific handling)
-	webpushConfig, err := prepareWebPushConfig(key, title, body, data, topic)
+	webpushConfig, _, err := prepareWebPushConfig(key, title, body, data, topic)
 	if err != nil {
 		sendErrorResponse(c, http.StatusBadRequest, fmt.Sprintf("Failed to prepare notification: %v", err))
 		return
