@@ -45,6 +45,17 @@ func getConfig(c *gin.Context) {
 		return
 	}
 
+	// Check if VAPID public key is configured
+	if projectConfig.VapidPublicKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"exc": gin.H{
+				"status_code": http.StatusBadRequest,
+				"message":     "VAPID public key not configured",
+			},
+		})
+		return
+	}
+
 	// Create Firebase config with exact field names
 	firebaseConfig := gin.H{
 		"apiKey":            projectConfig.FirebaseConfig.ApiKey,
@@ -60,7 +71,7 @@ func getConfig(c *gin.Context) {
 	log.Printf("[getConfig] Sending Firebase config for project %s:\n%s",
 		projectName, string(configBytes))
 
-	// Return config without the "message" wrapper
+	// Return config without the "message" wrapper (Frappe expects config and vapid_public_key at top level)
 	c.JSON(http.StatusOK, gin.H{
 		"vapid_public_key": projectConfig.VapidPublicKey,
 		"config":           firebaseConfig,
@@ -676,6 +687,18 @@ func sendNotificationToUser(c *gin.Context) {
 	body := c.Query("body")
 	data := c.Query("data")
 
+	// Get user's tokens
+	tokens, err := getUserTokens(key, userID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"exc": gin.H{
+				"status_code": 404,
+				"message":     err.Error(),
+			},
+		})
+		return
+	}
+
 	// Parse the data for notification settings
 	dataMap, err := parseNotificationData(data)
 	if err != nil {
@@ -687,20 +710,31 @@ func sendNotificationToUser(c *gin.Context) {
 	notificationData := convertToStringMap(dataMap)
 
 	// Add deduplication key
-	notificationData["deduplication_id"] = fmt.Sprintf("raven_%s_%d",
+	deduplicationID := fmt.Sprintf("raven_%s_%d",
 		notificationData["message_id"],
 		time.Now().UnixMilli())
+	notificationData["deduplication_id"] = deduplicationID
 
-	// Get user's tokens
-	tokens, err := getUserTokens(key, userID)
+	// Prepare web push config with decorations and icons (no topic for user notifications)
+	webpushConfig, err := prepareWebPushConfig(key, title, body, data, "")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"exc": gin.H{
-				"status_code": 404,
-				"message":     err.Error(),
-			},
-		})
+		sendErrorResponse(c, http.StatusBadRequest, fmt.Sprintf("Failed to prepare notification: %v", err))
 		return
+	}
+
+	// Add deduplication tag and other notification settings
+	if webpushConfig.Notification != nil {
+		webpushConfig.Notification.Tag = deduplicationID
+		webpushConfig.Notification.RequireInteraction = true
+		webpushConfig.Notification.Renotify = false
+	}
+
+	// Merge notification data into webpush config data
+	if webpushConfig.Data == nil {
+		webpushConfig.Data = make(map[string]string)
+	}
+	for k, v := range notificationData {
+		webpushConfig.Data[k] = v
 	}
 
 	// Send notification to all user tokens
@@ -716,19 +750,7 @@ func sendNotificationToUser(c *gin.Context) {
 				Title: title,
 				Body:  body,
 			},
-			Webpush: &messaging.WebpushConfig{
-				Notification: &messaging.WebpushNotification{
-					Title:              title,
-					Body:               body,
-					Tag:                notificationData["deduplication_id"], // Use deduplication ID as tag
-					RequireInteraction: true,
-					Renotify:           false, // Don't show duplicate notifications
-				},
-				FCMOptions: &messaging.WebpushFCMOptions{
-					Link: notificationData["click_action"],
-				},
-				Data: notificationData,
-			},
+			Webpush: webpushConfig,
 		}
 
 		log.Printf("[sendNotificationToUser] Sending notification with data: %+v", notificationData)

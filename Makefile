@@ -41,8 +41,8 @@ clean: ## Clean build directory.
 
 lint-deps: ## Install linting dependencies
 	@echo "Installing linting tools..."
-	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-	@go install github.com/securego/gosec/v2/cmd/gosec@latest
+	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.2
+	@go install github.com/securego/gosec/v2/cmd/gosec@v2.18.2
 
 lint: dep lint-deps ## Lint the source files
 	golangci-lint run --timeout 5m

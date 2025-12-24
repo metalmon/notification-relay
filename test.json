@@ -1,0 +1,17 @@
+{
+  "projects": {
+    "test_project": {
+      "vapid_public_key": "test-vapid-key",
+      "firebase_config": {
+        "apiKey": "test-api-key",
+        "authDomain": "",
+        "projectId": "",
+        "storageBucket": "",
+        "messagingSenderId": "",
+        "appId": ""
+      }
+    }
+  },
+  "trusted_proxies": "127.0.0.1",
+  "allowed_origins": null
+}
