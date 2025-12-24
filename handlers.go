@@ -693,6 +693,10 @@ func sendNotificationToUser(c *gin.Context) {
 		// Create message with notification and data
 		message := &messaging.Message{
 			Token: token,
+			Notification: &messaging.Notification{
+				Title: title,
+				Body:  body,
+			},
 			Webpush: &messaging.WebpushConfig{
 				Notification: &messaging.WebpushNotification{
 					Title:              title,
@@ -791,7 +795,11 @@ func sendNotificationToTopic(c *gin.Context) {
 	notificationData := convertToStringMap(dataMap)
 
 	message := &messaging.Message{
-		Topic:   topic,
+		Topic: topic,
+		Notification: &messaging.Notification{
+			Title: title,
+			Body:  body,
+		},
 		Webpush: webpushConfig,
 		Data:    notificationData,
 	}
