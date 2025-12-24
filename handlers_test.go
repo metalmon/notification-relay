@@ -1112,20 +1112,25 @@ func TestSendNotificationToTopic(t *testing.T) {
 					mock.Anything,
 					mock.MatchedBy(func(msg *messaging.Message) bool {
 						return msg.Topic == "test_topic" &&
+							msg.Notification != nil &&
+							msg.Notification.Title == "Test Title" &&
+							msg.Notification.Body == "Test Body" &&
 							msg.Webpush.Notification.Title == "Test Title" &&
 							msg.Webpush.Notification.Body == "Test Body"
 					}),
 				).Return("message_id", nil)
 			},
 			queryParams: map[string]string{
-				"topic_name": "test_topic",
-				"title":      "Test Title",
-				"body":       "Test Body",
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"topic_name":   "test_topic",
+				"title":        "Test Title",
+				"body":         "Test Body",
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody: map[string]interface{}{
 				"message": map[string]interface{}{
-					"success": true,
+					"success": float64(200),
 					"message": "Notification sent to test_topic topic",
 				},
 			},
@@ -1134,14 +1139,16 @@ func TestSendNotificationToTopic(t *testing.T) {
 			name:      "missing topic name",
 			setupMock: func() {},
 			queryParams: map[string]string{
-				"title": "Test Title",
-				"body":  "Test Body",
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"title":        "Test Title",
+				"body":         "Test Body",
 			},
-			expectedStatus: http.StatusOK,
+			expectedStatus: http.StatusBadRequest,
 			expectedBody: map[string]interface{}{
-				"message": map[string]interface{}{
-					"success": false,
-					"message": "topic_name is required",
+				"exc": map[string]interface{}{
+					"status_code": float64(400),
+					"message":     "topic_name is required",
 				},
 			},
 		},
@@ -1149,14 +1156,16 @@ func TestSendNotificationToTopic(t *testing.T) {
 			name:      "missing title",
 			setupMock: func() {},
 			queryParams: map[string]string{
-				"topic_name": "test_topic",
-				"body":       "Test Body",
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"topic_name":   "test_topic",
+				"body":         "Test Body",
 			},
-			expectedStatus: http.StatusOK,
+			expectedStatus: http.StatusBadRequest,
 			expectedBody: map[string]interface{}{
-				"message": map[string]interface{}{
-					"success": false,
-					"message": "title is required",
+				"exc": map[string]interface{}{
+					"status_code": float64(400),
+					"message":     "title is required",
 				},
 			},
 		},
@@ -1169,13 +1178,18 @@ func TestSendNotificationToTopic(t *testing.T) {
 				).Return("", fmt.Errorf("firebase error"))
 			},
 			queryParams: map[string]string{
-				"topic_name": "test_topic",
-				"title":      "Test Title",
-				"body":       "Test Body",
+				"project_name": "test_project",
+				"site_name":    "test_site",
+				"topic_name":   "test_topic",
+				"title":        "Test Title",
+				"body":         "Test Body",
 			},
 			expectedStatus: http.StatusInternalServerError,
 			expectedBody: map[string]interface{}{
-				"exc": `["Failed to send notification: firebase error"]`,
+				"exc": map[string]interface{}{
+					"status_code": float64(500),
+					"message":     "Failed to send notification: firebase error",
+				},
 			},
 		},
 	}
@@ -1214,6 +1228,9 @@ func TestSendNotificationToTopic(t *testing.T) {
 }
 
 func TestGetUserTokens(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
 	tests := []struct {
 		name        string
 		key         string
@@ -1224,11 +1241,11 @@ func TestGetUserTokens(t *testing.T) {
 	}{
 		{
 			name:   "existing user with tokens",
-			key:    "test_project",
+			key:    "test_project_site",
 			userID: "test_user",
 			setupMap: func() {
 				userDeviceMap = map[string]map[string][]string{
-					"test_project": {
+					"test_project_site": {
 						"test_user": {"token1", "token2"},
 					},
 				}
@@ -1237,11 +1254,11 @@ func TestGetUserTokens(t *testing.T) {
 		},
 		{
 			name:   "user with no tokens",
-			key:    "test_project",
+			key:    "test_project_site",
 			userID: "test_user",
 			setupMap: func() {
 				userDeviceMap = map[string]map[string][]string{
-					"test_project": {
+					"test_project_site": {
 						"test_user": {},
 					},
 				}
@@ -1250,11 +1267,11 @@ func TestGetUserTokens(t *testing.T) {
 		},
 		{
 			name:   "nonexistent user",
-			key:    "test_project",
+			key:    "test_project_site",
 			userID: "nonexistent_user",
 			setupMap: func() {
 				userDeviceMap = map[string]map[string][]string{
-					"test_project": {},
+					"test_project_site": {},
 				}
 			},
 			expectError: true,

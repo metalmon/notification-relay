@@ -500,12 +500,30 @@ func removeToken(c *gin.Context) {
 
 // getUserTokens retrieves the user's tokens
 func getUserTokens(key, userID string) ([]string, error) {
-	// Split key to get project name
+	// Key format is "projectName_siteName"
+	// Project name may contain underscores, so we need to find the correct split
+	// by checking all possible combinations from left to right
 	parts := strings.Split(key, "_")
 	if len(parts) < 2 {
 		return nil, fmt.Errorf("invalid key format: %s", key)
 	}
-	projectName := parts[0]
+
+	// Try all possible combinations from left to right to find matching project
+	var projectName string
+	found := false
+	for i := 1; i < len(parts); i++ {
+		candidate := strings.Join(parts[:i], "_")
+		if _, exists := config.Projects[candidate]; exists {
+			projectName = candidate
+			found = true
+			break
+		}
+	}
+
+	// If no match found, use first part as fallback (for backward compatibility)
+	if !found {
+		projectName = parts[0]
+	}
 
 	// Validate project exists
 	if _, exists := config.Projects[projectName]; !exists {
